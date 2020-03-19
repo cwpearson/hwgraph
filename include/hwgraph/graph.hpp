@@ -22,6 +22,33 @@ struct PciAddress {
   dev_type dev_;
   func_type func_;
 
+  bool operator==(const PciAddress &rhs) const noexcept {
+    return rhs.domain_ == domain_ && rhs.bus_ == bus_ && rhs.dev_ == dev_ &&
+           rhs.func_ == func_;
+  }
+
+  bool operator<(const PciAddress &rhs) const noexcept {
+    if (rhs.domain_ < domain_) {
+      return true;
+    }
+    if (rhs.domain_ > domain_) {
+      return false;
+    }
+    if (rhs.bus_ < bus_) {
+      return true;
+    }
+    if (rhs.bus_ > bus_) {
+      return false;
+    }
+    if (rhs.dev_ < dev_) {
+      return true;
+    }
+    if (rhs.dev_ > dev_) {
+      return false;
+    }
+    return rhs.func_ < func_;
+  }
+
   std::string domain_str() const {
     std::stringstream ret;
     ret << std::setfill('0') << std::setw(4) << std::hex << (size_t)domain_;
@@ -114,7 +141,8 @@ struct Vertex {
     return v;
   }
 
-  static Vertex_t new_pci_device(const char *name, const PciAddress &addr, float linkSpeed) {
+  static Vertex_t new_pci_device(const char *name, const PciAddress &addr,
+                                 float linkSpeed) {
     auto v = std::make_shared<Vertex>(Vertex::Type::PciDev);
     std::strncpy(v->data_.pciDev_.name, name, MAX_STR);
     v->data_.pciDev_.addr = addr;
@@ -134,6 +162,9 @@ struct Vertex {
       s += " @ " + data_.pciDev_.addr.str();
       return s;
     }
+    case Type::Unknown: {
+      return "unknown";
+    }
     default:
       return "vertex";
     }
@@ -149,6 +180,7 @@ struct Edge {
     Qpi,
     Xbus,
     Pci,
+    Nvlink,
   } type_;
 
   Vertex_t u_;
@@ -164,6 +196,8 @@ struct Edge {
     struct PciData {
       float linkSpeed_;
     } pci_;
+    struct NvlinkData {
+    } nvlink_;
   } data_;
 
   Edge(Type type) : type_(type), u_(nullptr), v_(nullptr) {
@@ -174,6 +208,11 @@ struct Edge {
   static Edge_t new_pci(float linkSpeed) {
     auto e = std::make_shared<Edge>(Edge::Type::Pci);
     e->data_.pci_.linkSpeed_ = linkSpeed;
+    return e;
+  }
+
+  static Edge_t new_nvlink() {
+    auto e = std::make_shared<Edge>(Edge::Type::Nvlink);
     return e;
   }
 
@@ -189,7 +228,7 @@ struct Edge {
       assert(0 && "bandwidth() called on unknown edge");
       return -1;
     default:
-      assert(0 && "unexpected edge Type");
+      assert(0 && "unhandled edge Type");
       return -1;
     }
   }
@@ -335,16 +374,33 @@ public:
     return nullptr;
   }
 
-Vertex_t get_bridge_for_address(const PciAddress &address) {
-  for (const auto &br : vertices<Vertex::Type::Bridge>()) {
-    if (br->data_.bridge_.domain.domain_ == address.domain_ &&
-        br->data_.bridge_.secondaryBus.bus_ == address.bus_) {
-      return br;
+  Vertex_t get_pci(const PciAddress &address) {
+    for (const auto &v : vertices_) {
+      if (v->type_ == Vertex::Type::Bridge) {
+        PciAddress br = v->data_.bridge_.addr;
+        if (br.domain_ == address.domain_ && br.bus_ == address.bus_) {
+          return v;
+        }
+
+      } else if (v->type_ == Vertex::Type::PciDev) {
+        if (v->data_.pciDev_.addr == address) {
+          return v;
+        }
+      }
     }
+    return nullptr;
   }
 
-  return nullptr;
-}
+  Vertex_t get_bridge_for_address(const PciAddress &address) {
+    for (const auto &br : vertices<Vertex::Type::Bridge>()) {
+      if (br->data_.bridge_.domain.domain_ == address.domain_ &&
+          br->data_.bridge_.secondaryBus.bus_ == address.bus_) {
+        return br;
+      }
+    }
+
+    return nullptr;
+  }
 
   std::vector<Path> paths(const Vertex_t src, const Vertex_t dst) {
 

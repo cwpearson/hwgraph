@@ -48,9 +48,6 @@ Graph make_graph(const DiscoveryMethod &method) {
 
 #if HWGRAPH_USE_NVML == 1
     if (method && DiscoveryMethod::Nvml) {
-        nvml::add_gpus(g);
-    }
-    if (method && DiscoveryMethod::Nvml) {
         nvml::add_nvlinks(g);
     }
 #endif

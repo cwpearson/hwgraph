@@ -158,8 +158,7 @@ inline void visit_pci_bridge(hwgraph::Graph &graph, const hwloc_obj_t obj) {
 }
 
 
-inline void visit_pci_device(hwgraph::Graph &graph, const hwloc_obj_t obj,
-                                    std::set<hwloc_obj_t> &visited) {
+inline void visit_pci_device(hwgraph::Graph &graph, const hwloc_obj_t obj) {
 
   // get name
   char *name;
@@ -265,7 +264,7 @@ inline void descend_pci_tree(hwloc_topology_t topology, hwgraph::Graph &graph,
     visit_pci_bridge(graph, obj);
   } else if (obj->type == HWLOC_OBJ_PCI_DEVICE) {
     std::cerr << "descend_pci_tree(): PCI device!\n";
-    visit_pci_device(graph, obj, visited);
+    visit_pci_device(graph, obj);
   #if 0
   } else if (obj->type == HWLOC_OBJ_GROUP) {
     LOG_DEBUG("Group device\n");
