@@ -13,37 +13,37 @@ TEST_CASE("graph", "") {
     REQUIRE(paths.empty());
   }
 
-  SECTION("take_vertex") {
-    auto *v0 = new Vertex();
-    auto *v1 = new Vertex();
+  SECTION("insert_vertex") {
+    auto v0 = std::make_shared<Vertex>();
+    auto v1 = std::make_shared<Vertex>();
 
-    g.take_vertex(v0);
+    g.insert_vertex(v0);
     REQUIRE(1 == g.vertices().count(v0));
-    g.take_vertex(v0);
+    g.insert_vertex(v0);
     REQUIRE(1 == g.vertices().count(v0));
-    g.take_vertex(v1);
+    g.insert_vertex(v1);
     REQUIRE(1 == g.vertices().count(v0));
     REQUIRE(1 == g.vertices().count(v1));
 
   }
 
-    SECTION("take_edge") {
-    auto *e0 = new Edge();
-    auto *e1 = new Edge();
+    SECTION("insert_edge") {
+    auto e0 = std::make_shared<Edge>();
+    auto e1 = std::make_shared<Edge>();
 
-    g.take_edge(e0);
+    g.insert_edge(e0);
     REQUIRE(1 == g.edges().count(e0));
-    g.take_edge(e0);
+    g.insert_edge(e0);
     REQUIRE(1 == g.edges().count(e0));
-    g.take_edge(e1);
+    g.insert_edge(e1);
     REQUIRE(1 == g.edges().count(e0));
     REQUIRE(1 == g.edges().count(e1));
   }
 
   SECTION("join") {
-    auto *src = new Vertex();
-    auto *dst = new Vertex();
-    auto *e = new Edge();
+    auto src = std::make_shared<Vertex>();
+    auto dst = std::make_shared<Vertex>();
+    auto e = std::make_shared<Edge>();
 
     g.join(src, dst, e);
 
@@ -53,14 +53,14 @@ TEST_CASE("graph", "") {
   }
 
   SECTION("single path") {
-    auto *src = new Vertex();
-    auto *dst = new Vertex();
-    auto *e = new Edge();
+    auto src = std::make_shared<Vertex>();
+    auto dst = std::make_shared<Vertex>();
+    auto e = std::make_shared<Edge>();
 
     g.join(src, dst, e);
 
-    std::vector<std::vector<const Edge *>> paths;
-    std::vector<const Edge *> path;
+    std::vector<Graph::Path> paths;
+    Graph::Path path;
 
     // forward path
     paths = g.paths(src, dst);
@@ -78,10 +78,10 @@ TEST_CASE("graph", "") {
   }
 
   SECTION("multiple_paths") {
-    auto *src = new Vertex();
-    auto *dst = new Vertex();
-    auto *e1 = new Edge();
-    auto *e2 = new Edge();
+    auto src = std::make_shared<Vertex>();
+    auto dst = std::make_shared<Vertex>();
+    auto e1 = std::make_shared<Edge>();
+    auto e2 = std::make_shared<Edge>();
 
     g.join(src, dst, e1);
     g.join(dst, src, e2);
@@ -93,8 +93,8 @@ TEST_CASE("graph", "") {
     REQUIRE(2 == src->edges_.size());
     REQUIRE(2 == dst->edges_.size());
 
-    std::vector<std::vector<const Edge *>> paths;
-    std::vector<const Edge *> path;
+    std::vector<Graph::Path> paths;
+    Graph::Path path;
 
     // forward paths
     paths = g.paths(src, dst);

@@ -5,89 +5,104 @@
 #include <memory>
 #include <set>
 #include <vector>
+#include  <cstring>
+
 
 namespace hwgraph {
 
-class Edge;
+struct Edge;
 
-class Vertex {
-public:
-  std::set<Edge *> edges_;
-  virtual ~Vertex() = default;
+typedef std::shared_ptr<Edge> Edge_t;
+
+struct Vertex {
+
+  static constexpr size_t MAX_STR = 32;
+
+  enum class Type {
+    Gpu,
+    Ppc,
+    Intel,
+  } type_;
+
+  std::set<Edge_t> edges_;
+
+  union Data {
+    struct GpuData {
+    } gpu_;
+    struct PpcData {
+      char model[MAX_STR];
+      int revision;
+    } ppc_;
+    struct IntelData {
+      char model[MAX_STR];
+      char vendor[MAX_STR];
+      int modelNumber;
+      int familyNumber;
+      int stepping;
+    } intel_;
+  } data_;
 };
 
-class Edge {
-public:
-  Vertex *u_;
-  Vertex *v_;
-  Edge() : u_(nullptr), v_(nullptr) {}
-  virtual ~Edge() = default;
+typedef std::shared_ptr<Vertex> Vertex_t;
+
+struct Edge {
+
+  static const int64_t QPI_GT = 1e9;
+
+  enum class Type {
+    Qpi,
+    Xbus,
+    Unknown,
+  } type_;
+
+  Vertex_t u_;
+  Vertex_t v_;
+  union Data {
+    struct QpiData {
+      int64_t links_;
+      int64_t speed_;
+    } qpi_;
+    struct XbusData {
+      int64_t bw_;
+    } xbus_;
+  } data_;
+
+  
+  Edge(Type type) : type_(type), u_(nullptr), v_(nullptr) {}
+  Edge() : Edge(Type::Unknown) {}
+
+  int64_t bandwidth() {
+    switch (type_) {
+    case Type::Qpi:
+      return data_.qpi_.links_ * data_.qpi_.speed_;
+    case Type::Xbus:
+      return data_.xbus_.bw_;
+    case Type::Unknown:
+      assert(0 && "bandwidth() called on unknown edge");
+      return -1;
+    default:
+      assert(0 && "unexpected edge Type");
+      return -1;
+    }
+  }
 };
 
-class Interconnect : public Edge {
-public:
-  virtual int64_t bandwidth() const = 0;
-};
 
-class Xbus : public Interconnect {
-public:
-  int64_t bw_;
-  Xbus(int64_t bw) : bw_(bw) {}
 
-  int64_t bandwidth() const override { return bw_; }
-};
-
-class Qpi : public Interconnect {
-  public:
-  static constexpr int64_t GT = 1e9;
-
-  int64_t links_;
-  int64_t speed_;
-
-  Qpi(int links, int64_t speed) : links_(links), speed_(speed) {}
-
-  int64_t bandwidth() const override { return links_ * speed_; }
-
-};
-
-class Unknown : public Interconnect {
-  public:
-int64_t bandwidth() const override { return -1; }
-};
-
-class Gpu : public Vertex {};
-
-class Package : public Vertex {};
-
-class Intel : public Package {
-public:
-  std::string model;
-  std::string vendor;
-  int modelNumber;
-  int familyNumber;
-  int stepping;
-};
-
-class Ppc : public Package {
-public:
-  std::string model;
-  int revision;
-};
-
-struct EdgeCmp {
+struct EdgeEq {
   Edge *e_;
-  EdgeCmp(Edge *e) : e_(e) {}
+  EdgeEq(Edge *e) : e_(e) {}
 
-  bool operator()(const std::unique_ptr<Edge> &up) const {
+  bool operator()(const std::shared_ptr<Edge> &up) const {
     return up.get() == e_;
   }
 };
 
-struct VertexCmp {
+struct VertexEq {
   Vertex *v_;
-  VertexCmp(Vertex *v) : v_(v) {}
+  VertexEq(Vertex *v) : v_(v) {}
 
-  bool operator()(const std::unique_ptr<Vertex> &up) const {
+  bool operator()(const std::shared_ptr<Vertex> &up) const {
     return up.get() == v_;
   }
 };
@@ -95,26 +110,28 @@ struct VertexCmp {
 class Graph {
 
 public:
-  typedef std::vector<const Edge *> Path;
+  typedef std::vector<Edge_t> Path;
 
   /*! Build a new graph
    */
   Graph() {}
 
-  std::set<const Edge *> edges() const {
-    std::set<const Edge *> ret;
-    for (auto &e : edges_) {
-      ret.insert(e.get());
-    }
-    return ret;
+  const std::set<Edge_t> &edges() const {
+    return edges_;
+  }
+  std::set<Edge_t> &edges() {
+    return edges_;
   }
 
-  template<typename T = Vertex>
-  std::set<T *> vertices() {
-    std::set<T *> ret;
+  const std::set<Vertex_t> &vertices() const {
+    return vertices_;
+  }
+
+  template <Vertex::Type T> std::set<Vertex_t> vertices() {
+    std::set<Vertex_t> ret;
     for (auto &v : vertices_) {
-      if (auto t = dynamic_cast<T*>(v.get())) {
-        ret.insert(t);
+      if (v->type_ == T) {
+        ret.insert(v);
       }
     }
     return ret;
@@ -122,47 +139,72 @@ public:
 
   /* take ownership of a vertex if we haven't already
    */
-  Vertex *take_vertex(Vertex *v) {
-    assert(v && "tried to take vertex nullptr");
-    auto it = std::find_if(vertices_.begin(), vertices_.end(), VertexCmp(v));
+  Vertex_t take_vertex(Vertex *v) {
+    auto it = std::find_if(vertices_.begin(), vertices_.end(), VertexEq(v));
     if (it == vertices_.end()) {
-      vertices_.insert(std::unique_ptr<Vertex>(v));
+      return insert_vertex(std::shared_ptr<Vertex>(v));
     }
-    return v;
+    else {
+      return *it;
+    }
+  }
+
+  Vertex_t insert_vertex(Vertex_t v) {
+    auto p = vertices_.insert(v);
+    return *(p.first);
   }
 
   /* take ownership of an edge if we haven't already
    */
-  Edge *take_edge(Edge *e) {
-    assert(e && "tried to take edge nullptr");
-    auto it = std::find_if(edges_.begin(), edges_.end(), EdgeCmp(e));
+  Edge_t take_edge(Edge *e) {
+    auto it = std::find_if(edges_.begin(), edges_.end(), EdgeEq(e));
     if (it == edges_.end()) {
-      edges_.insert(std::unique_ptr<Edge>(e));
+      return insert_edge(std::shared_ptr<Edge>(e));
     }
-    return e;
+    else {
+      return *it;
+    }
   }
 
-  Edge *join(Vertex *u, Vertex *v, Edge *e) {
+  /* take ownership of an edge if we haven't already
+   */
+  Edge_t insert_edge(Edge_t e) {
+    auto p = edges_.insert(e);
+    return *(p.first);
+  }
+
+  Edge_t join(Vertex *u, Vertex *v, Edge *e) {
+    auto us = take_vertex(u);
+    auto vs = take_vertex(v);
+    auto es = take_edge(e);
+    return join(us, vs, es);
+  }
+
+  Edge_t join(Vertex_t u, Vertex_t v, Edge *e) {
+    auto us = insert_vertex(u);
+    auto vs = insert_vertex(v);
+    auto es = take_edge(e);
+    return join(us, vs, es);
+  }
+
+  Edge_t join(Vertex_t u, Vertex_t v, Edge_t e) {
     assert(u);
     assert(v);
     assert(e);
     assert(e->u_ == nullptr && "edge is already connected");
-    take_vertex(u);
+    insert_vertex(u);
     e->u_ = u;
     assert(e->v_ == nullptr && "edge is already connected");
-    take_vertex(v);
+    insert_vertex(v);
     e->v_ = v;
 
-    take_edge(e);
     u->edges_.insert(e);
     v->edges_.insert(e);
-    return e;
+    auto ret = insert_edge(e);
+    return ret;
   }
 
-  /* it's hard to get a unique_ptr out of a set
-     to return the original, might want to use a shared_ptr
-  */
-  void replace(Edge *orig, Edge *next) {
+  std::shared_ptr<Edge> replace(Edge_t orig, Edge_t next) {
     // replace vertices edges with next
     orig->u_->edges_.erase(orig);
     orig->u_->edges_.insert(next);
@@ -174,11 +216,13 @@ public:
     next->v_ = orig->v_;
 
     // delete original edge
-    auto it = std::find_if(edges_.begin(), edges_.end(), EdgeCmp(orig));
+    auto it = std::find(edges_.begin(), edges_.end(), orig);
+    auto ret = *it;
     edges_.erase(it);
+    return ret;
   }
 
-  std::vector<Path> paths(const Vertex *src, const Vertex *dst) {
+  std::vector<Path> paths(const Vertex_t src, const Vertex_t dst) {
 
     std::vector<Path> ret; // the paths from src to dst
 
@@ -187,13 +231,13 @@ public:
       return ret;
     }
 
-    std::set<const Edge *> visited; // the edges we have traversed
+    std::set<Edge_t> visited; // the edges we have traversed
     std::deque<Path> worklist;
 
     // std::cerr << "init worklist " << src->edges_.size() << "\n";
 
     // initialize worklist
-    for (const auto e : src->edges_) {
+    for (auto e : src->edges_) {
       Path path = {e};
       worklist.push_front(path);
       visited.insert(e);
@@ -210,8 +254,8 @@ public:
         ret.push_back(next);
       } else {
         // make new paths for work list
-        const Vertex *u = next.back()->u_;
-        for (const auto e : u->edges_) {
+        Vertex_t u = next.back()->u_;
+        for (auto e : u->edges_) {
           Path path = next;
           if (0 == visited.count(e)) {
             path.push_back(e);
@@ -220,8 +264,8 @@ public:
           }
         }
 
-        const Vertex *v = next.back()->v_;
-        for (const auto e : v->edges_) {
+        Vertex_t v = next.back()->v_;
+        for (auto e : v->edges_) {
           Path path = next;
           if (0 == visited.count(e)) {
             path.push_back(e);
@@ -236,8 +280,9 @@ public:
   }
 
 private:
-  std::set<std::unique_ptr<Vertex>> vertices_;
-  std::set<std::unique_ptr<Edge>> edges_;
+  std::set<std::shared_ptr<Vertex>> vertices_;
+  std::set<std::shared_ptr<Edge>> edges_;
+
 };
 
 } // namespace hwgraph

@@ -28,10 +28,12 @@ void add_packages(hwgraph::Graph &graph) {
     for (unsigned i = 0; i < numPackages; ++i) {
       hwloc_obj_t obj = hwloc_get_obj_by_depth(topology, depth, i);
 
+      Vertex *v = new Vertex();
+
 #ifdef __x86_64__
-      Intel *p = new Intel();
+      v->type_ = Vertex::Type::Intel;
 #elif __PPC__
-      PPC *p = new Ppc();
+      v->type_ = Vertex::Type::Ppc;
 #endif
 
       // section 23.13 p. 266
@@ -44,27 +46,30 @@ void add_packages(hwgraph::Graph &graph) {
 // Section 9.2 (p.37)
 #ifdef __x86_64__
         if (std::string("CPUModel") == obj->infos[j].name) {
-          p->model = obj->infos[j].value;
+          std::strncpy(v->data_.intel_.model, obj->infos[j].value,
+                       Vertex::MAX_STR);
         } else if (std::string("CPUVendor") == obj->infos[j].name) {
-          p->vendor = obj->infos[j].value;
+          std::strncpy(v->data_.intel_.vendor, obj->infos[j].value,
+                       Vertex::MAX_STR);
         } else if (std::string("CPUModelNumber") == obj->infos[j].name) {
-          p->modelNumber = std::atoi(obj->infos[j].value);
+          v->data_.intel_.modelNumber = std::atoi(obj->infos[j].value);
         } else if (std::string("CPUFamilyNumber") == obj->infos[j].name) {
-          p->familyNumber = std::atoi(obj->infos[j].value);
+          v->data_.intel_.familyNumber = std::atoi(obj->infos[j].value);
         } else if (std::string("CPUStepping") == obj->infos[j].name) {
-          p->stepping = std::atoi(obj->infos[j].value);
+          v->data_.intel_.stepping = std::atoi(obj->infos[j].value);
         }
 #endif
 
 #ifdef __PPC__
         if (std::string("CPUModel") == obj->infos[j].name) {
-          p->model = obj->infos[j].value;
+          std::strncpy(v->data_.ppc_.model, = obj->infos[j].value,
+                       Vertex::MAX_STR);
         } else if (std::string("CPURevision") == obj->infos[j].name) {
-          p->revision = std::atoi(obj->infos[j].value);
+          v->data_.ppc_.revision = std::atoi(obj->infos[j].value);
         }
 #endif
       }
-      graph.take_vertex(p);
+      graph.take_vertex(v);
     }
 
 // https://en.wikichip.org/wiki/intel/cpuid
@@ -83,13 +88,17 @@ void add_packages(hwgraph::Graph &graph) {
 #ifdef __x86_64__
     // consider https://github.com/NVIDIA/nccl/blob/master/src/graph/topo.cc
 
-    for (auto i : graph.vertices<Intel>()) {
-      for (auto j : graph.vertices<Intel>()) {
+    for (auto i : graph.vertices<Vertex::Type::Intel>()) {
+      for (auto j : graph.vertices<Vertex::Type::Intel>()) {
         if (i != j) {
-          if (i->familyNumber == 6 && i->modelNumber == 0x4f) {
-            graph.join(i, j, new Qpi(2, 8 * Qpi::GT));
+          if (i->data_.intel_.familyNumber == 6 && i->data_.intel_.modelNumber == 0x4f) {
+            Edge *edge = new Edge(Edge::Type::Qpi);
+            edge->data_.qpi_.links_ = 2;
+            edge->data_.qpi_.speed_ = 8 * Edge::QPI_GT;
+            graph.join(i, j, edge);
           } else {
-            graph.join(i, j, new Unknown());
+            Edge *edge = new Edge(Edge::Type::Unknown);
+            graph.join(i, j, edge);
           }
         }
       }

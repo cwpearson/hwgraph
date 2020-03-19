@@ -19,7 +19,7 @@ TEST_CASE("hwgraph", "[hwloc][nvml]") {
 
   int64_t numPackages = 0;
   for (auto e : g.vertices()) {
-    if (dynamic_cast<const Package *>(e)) {
+    if (e->type_ == Vertex::Type::Intel || e->type_ == Vertex::Type::Ppc) {
       ++numPackages;
     }
   }
