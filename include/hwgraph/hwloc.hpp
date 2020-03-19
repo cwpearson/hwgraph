@@ -12,6 +12,7 @@ inline void add_packages(hwgraph::Graph &graph) {
 
   hwloc_topology_init(&topology);
   hwloc_topology_set_flags(topology, HWLOC_TOPOLOGY_FLAG_WHOLE_SYSTEM);
+  //hwloc_topology_set_all_types_filter(topology, HWLOC_TYPE_FILTER_KEEP_ALL);
   hwloc_topology_load(topology);
 
   // Add packages to system
@@ -65,7 +66,7 @@ inline void add_packages(hwgraph::Graph &graph) {
 
 #ifdef __PPC__
         if (std::string("CPUModel") == obj->infos[j].name) {
-          std::strncpy(v->data_.ppc_.model, = obj->infos[j].value,
+          std::strncpy(v->data_.ppc_.model, obj->infos[j].value,
                        Vertex::MAX_STR);
         } else if (std::string("CPURevision") == obj->infos[j].name) {
           v->data_.ppc_.revision = std::atoi(obj->infos[j].value);
@@ -78,10 +79,10 @@ inline void add_packages(hwgraph::Graph &graph) {
 // https://en.wikichip.org/wiki/intel/cpuid
 #ifdef __PPC__
 
-    for (auto i : graph.vertices<Ppc>()) {
-      for (auto j : graph.vertices<Ppc>()) {
+    for (auto i : graph.vertices<Vertex::Type::Ppc>()) {
+      for (auto j : graph.vertices<Vertex::Type::Ppc>()) {
         if (i != j) {
-          graph.join(i, j, new Xbus(64 * GiB));
+          graph.join(i, j, Edge::new_xbus(64 * Edge::XBUS_GIB));
         }
       }
     }
@@ -265,22 +266,20 @@ inline void descend_pci_tree(hwloc_topology_t topology, hwgraph::Graph &graph,
   } else if (obj->type == HWLOC_OBJ_PCI_DEVICE) {
     std::cerr << "descend_pci_tree(): PCI device!\n";
     visit_pci_device(graph, obj);
-  #if 0
   } else if (obj->type == HWLOC_OBJ_GROUP) {
-    LOG_DEBUG("Group device\n");
+    std::cerr << "Group device " << obj->name << "\n";
   } else if (obj->type == HWLOC_OBJ_MISC) {
-    LOG_DEBUG("MISC device\n");
+    std::cerr << "MISC device " << obj->name << "\n";
   } else if (obj->type == HWLOC_OBJ_OS_DEVICE) {
-    LOG_DEBUG("OS Device " << obj->name);
-    visit_os_device(graph, obj, visited);
+    std::cerr << "OS Device " << obj->name << "\n";
+    //visit_os_device(graph, obj, visited);
   } else {
-    LOG_DEBUG(obj->name);
+    std::cerr << "Other kind of device " << obj->name << "\n";
     for (unsigned i = 0; i < obj->infos_count; ++i) {
-      LOG_DEBUG(obj->infos[i].name << "::" << obj->infos[i].value);
+	    std::cerr << obj->infos[i].name << "::" << obj->infos[i].value << "\n";
     }
     assert(obj->type != HWLOC_OBJ_BRIDGE); // should have caught these
     assert(0 && "How did we get here?");
-    #endif
   }
 
 
@@ -292,14 +291,13 @@ inline void descend_pci_tree(hwloc_topology_t topology, hwgraph::Graph &graph,
 }
 
 
-
 inline void add_pci(hwgraph::Graph &graph) {
     hwloc_topology_t topology;
 
   hwloc_topology_init(&topology);
   hwloc_topology_set_flags(topology, HWLOC_TOPOLOGY_FLAG_WHOLE_SYSTEM |
-                                         HWLOC_TOPOLOGY_FLAG_IO_DEVICES |
-                                         HWLOC_TOPOLOGY_FLAG_IO_BRIDGES);
+                                         HWLOC_TOPOLOGY_FLAG_IO_BRIDGES |
+					 HWLOC_TOPOLOGY_FLAG_WHOLE_IO);
   hwloc_topology_load(topology);
 
   // Descend down into each PCI bridge

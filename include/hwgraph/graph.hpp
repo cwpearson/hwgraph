@@ -90,18 +90,29 @@ struct Vertex {
 
   enum class Type {
     Unknown,
-    Gpu,
     Ppc,
     Intel,
     Bridge, // PCI host bridge
     PciDev,
+    Gpu,
   } type_;
 
   std::set<Edge_t> edges_;
+ 
+  char name_[MAX_STR];
+
+  struct PciDevice {
+    PciAddress addr;
+    unsigned short cls;
+    unsigned short vendor;
+    unsigned short device;
+    unsigned short subvendor;
+    unsigned short subdevice;
+    unsigned char revision;
+    float linkSpeed;
+  };
 
   union Data {
-    struct GpuData {
-    } gpu_;
     struct PpcData {
       unsigned idx; // hwloc index
       char model[MAX_STR];
@@ -121,11 +132,10 @@ struct Vertex {
       PciAddress secondaryBus;
       PciAddress subordinateBus;
     } bridge_;
-    struct PciDevData {
-      char name[MAX_STR];
-      PciAddress addr;
-      float linkSpeed;
-    } pciDev_;
+    PciDevice pciDev_;
+    struct GpuData {
+      PciDevice pciDev;
+    } gpu_;
   } data_;
 
   Vertex(Type type) : type_(type) { std::memset(&data_, 0, sizeof(data_)); }
@@ -144,9 +154,16 @@ struct Vertex {
   static Vertex_t new_pci_device(const char *name, const PciAddress &addr,
                                  float linkSpeed) {
     auto v = std::make_shared<Vertex>(Vertex::Type::PciDev);
-    std::strncpy(v->data_.pciDev_.name, name, MAX_STR);
+    std::strncpy(v->name_, name, MAX_STR);
     v->data_.pciDev_.addr = addr;
     v->data_.pciDev_.linkSpeed = linkSpeed;
+    return v;
+  }
+
+  static Vertex_t new_gpu(const char *name, const PciDevice &pciDev) {
+    auto v = std::make_shared<Vertex>(Vertex::Type::Gpu);
+    std::strncpy(v->name_, name, MAX_STR);
+    v->data_.gpu_.pciDev = pciDev;
     return v;
   }
 
@@ -154,11 +171,14 @@ struct Vertex {
     switch (type_) {
     case Type::Bridge: {
       std::string s = "bridge ";
-      s += data_.bridge_.addr.str();
+      s += "addr=" + data_.bridge_.addr.str();
+      s += ",dom=" + data_.bridge_.domain.str();
+      s += ",sec=" + data_.bridge_.secondaryBus.str();
+      s += ",sub=" + data_.bridge_.subordinateBus.str();
       return s;
     }
     case Type::PciDev: {
-      std::string s = data_.pciDev_.name;
+      std::string s = name_;
       s += " @ " + data_.pciDev_.addr.str();
       return s;
     }
@@ -174,6 +194,7 @@ struct Vertex {
 struct Edge {
 
   static const int64_t QPI_GT = 1e9;
+  static const int64_t XBUS_GIB = int64_t(1) << 30;
 
   enum class Type {
     Unknown,
@@ -213,6 +234,12 @@ struct Edge {
 
   static Edge_t new_nvlink() {
     auto e = std::make_shared<Edge>(Edge::Type::Nvlink);
+    return e;
+  }
+
+  static Edge_t new_xbus(int64_t bw) {
+    auto e = std::make_shared<Edge>(Edge::Type::Xbus);
+    e->data_.xbus_.bw_ = bw;
     return e;
   }
 
@@ -341,7 +368,9 @@ public:
     return ret;
   }
 
-  std::shared_ptr<Edge> replace(Edge_t orig, Edge_t next) {
+  Edge_t replace(Edge_t orig, Edge_t next) {
+    assert(edges_.count(orig));
+
     // replace vertices edges with next
     orig->u_->edges_.erase(orig);
     orig->u_->edges_.insert(next);
@@ -356,6 +385,30 @@ public:
     auto it = std::find(edges_.begin(), edges_.end(), orig);
     auto ret = *it;
     edges_.erase(it);
+    return ret;
+  }
+
+  Vertex_t replace(Vertex_t orig, Vertex_t next) {
+    assert(vertices_.count(orig));
+
+    // replace all edge terminators
+    for (auto &e : orig->edges_) {
+      if (e->u_ == orig) {
+        e->u_ = next;
+      }
+      if (e->v_ == orig) {
+        e->v_ = next;
+      }
+    }
+
+    // add new vertex
+    vertices_.insert(next);
+
+    // delete original vertex
+    auto it = std::find(vertices_.begin(), vertices_.end(), orig);
+    auto ret = *it;
+    vertices_.erase(it);
+
     return ret;
   }
 
@@ -384,6 +437,10 @@ public:
 
       } else if (v->type_ == Vertex::Type::PciDev) {
         if (v->data_.pciDev_.addr == address) {
+          return v;
+        }
+      } else if (v->type_ == Vertex::Type::Gpu) {
+        if (v->data_.gpu_.pciDev.addr == address) {
           return v;
         }
       }

@@ -35,6 +35,54 @@ public:
 Initer initer;
 
 // https://github.com/NVIDIA/nccl/blob/6c61492eba5c25ac6ed1bf57de23c6a689aa75cc/src/graph/topo.cc#L222
+inline void add_gpus(hwgraph::Graph &graph) {
+
+  unsigned int deviceCount;
+  NVML(nvmlDeviceGetCount(&deviceCount));
+  for (unsigned int devIdx = 0; devIdx < deviceCount; ++devIdx) {
+
+    std::cerr << "Querying NVML device " << devIdx << "\n";
+    nvmlDevice_t dev;
+    NVML(nvmlDeviceGetHandleByIndex(devIdx, &dev));
+
+    int cudaMajor, cudaMinor;
+    NVML(nvmlDeviceGetCudaComputeCapability(dev, &cudaMajor, &cudaMinor));
+    int maxNvLinks, width;
+    if (cudaMajor < 6) {
+      maxNvLinks = 0;
+      width = 0;
+    } else if (cudaMajor == 6) {
+      maxNvLinks = 4;
+      width = 12;
+    } else {
+      maxNvLinks = 6;
+      width = 16;
+    }
+
+    // get the name of this device
+    char name[64];
+    unsigned length;
+    NVML(nvmlDeviceGetName(dev, name, sizeof(name)));
+    
+    // Get the PCI address of this device
+    nvmlPciInfo_t pciInfo;
+    NVML(nvmlDeviceGetPciInfo(dev, &pciInfo));
+    PciAddress addr = {pciInfo.domain, pciInfo.bus, pciInfo.device, 0};
+    auto local = graph.get_pci(addr);
+
+
+    if (local) {
+      std::cerr << "add_gpus(): replace\n";
+      auto gpu = Vertex::new_gpu(name, local->data_.pciDev_);
+      graph.replace(local, gpu);
+    } else {
+      std::cerr << "add_gpus(): new\n";
+      assert(0);
+    }
+
+  }
+}
+// https://github.com/NVIDIA/nccl/blob/6c61492eba5c25ac6ed1bf57de23c6a689aa75cc/src/graph/topo.cc#L222
 inline void add_nvlinks(hwgraph::Graph &graph) {
 
   unsigned int deviceCount;
@@ -66,7 +114,7 @@ inline void add_nvlinks(hwgraph::Graph &graph) {
       if (NVML_ERROR_NOT_SUPPORTED == ret) { // GPU does not support NVLink
         std::cerr << "GPU does not support NVLink\n";
         break; // no need to check all links
-      } else if (NVML_FEATURE_ENABLED != ret) {
+      } else if (NVML_FEATURE_ENABLED != isActive) {
         std::cerr << "link not active on GPU\n";
         continue;
       }
@@ -75,18 +123,22 @@ inline void add_nvlinks(hwgraph::Graph &graph) {
       nvmlPciInfo_t pciInfo;
       NVML(nvmlDeviceGetPciInfo(dev, &pciInfo));
       PciAddress addr = {pciInfo.domain, pciInfo.bus, pciInfo.device, 0};
+      std::cerr << "add_nvlinks(): local " << addr.str() << "\n";
       auto local = graph.get_pci(addr);
+      assert(local->type_ == Vertex::Type::Gpu);
 
       // figure out what's on the other side
       NVML(nvmlDeviceGetNvLinkRemotePciInfo(dev, l, &pciInfo));
       addr = {pciInfo.domain, pciInfo.bus, pciInfo.device, 0};
       auto remote = graph.get_pci(addr);
 
+      std::cerr << "add_nvlinks(): remote " << addr.str() << "\n";
+
       if (remote->type_ == Vertex::Type::Gpu) {
         std::cerr << "connect to remote GPU\n";
 
         // nvlink will be visible from both sides, so only connect one way
-        if (local->data_.pciDev_.addr < remote->data_.pciDev_.addr) {
+        if (local->data_.gpu_.pciDev.addr < remote->data_.gpu_.pciDev.addr) {
           auto link = Edge::new_nvlink();
           graph.join(local, remote, link);
         }
