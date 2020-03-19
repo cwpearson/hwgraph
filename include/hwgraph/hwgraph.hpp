@@ -42,6 +42,9 @@ Graph make_graph(const DiscoveryMethod &method) {
     if (method && DiscoveryMethod::Hwloc) {
         hwloc::add_packages(g);
     }
+    if (method && DiscoveryMethod::Hwloc) {
+        hwloc::add_pci(g);
+    }
 
 #if HWGRAPH_USE_NVML == 1
     if (method && DiscoveryMethod::Nvml) {

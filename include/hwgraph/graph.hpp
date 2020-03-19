@@ -1,27 +1,73 @@
 #pragma once
 
+#include <cstring>
 #include <deque>
+#include <iomanip>
 #include <iostream>
 #include <memory>
 #include <set>
+#include <sstream>
 #include <vector>
-#include  <cstring>
-
 
 namespace hwgraph {
 
-struct Edge;
+struct PciAddress {
+  typedef unsigned short domain_type;
+  typedef unsigned char bus_type;
+  typedef unsigned char dev_type;
+  typedef unsigned char func_type;
 
+  domain_type domain_;
+  bus_type bus_;
+  dev_type dev_;
+  func_type func_;
+
+  std::string domain_str() const {
+    std::stringstream ret;
+    ret << std::setfill('0') << std::setw(4) << std::hex << (size_t)domain_;
+    return ret.str();
+  }
+  std::string bus_str() const {
+    std::stringstream ret;
+    ret << std::setfill('0') << std::setw(2) << std::hex << (size_t)bus_;
+    return ret.str();
+  }
+  std::string dev_str() const {
+    std::stringstream ret;
+    ret << std::setfill('0') << std::setw(2) << std::hex << (size_t)dev_;
+    return ret.str();
+  }
+  std::string func_str() const {
+    std::stringstream ret;
+    ret << std::setfill('0') << std::setw(1) << std::hex << (size_t)func_;
+    return ret.str();
+  }
+
+  std::string str() const {
+    std::stringstream ret;
+    ret << domain_str() << ":" << bus_str() << ":" << dev_str() << "."
+        << func_str();
+    return ret.str();
+  }
+};
+
+struct Edge;
 typedef std::shared_ptr<Edge> Edge_t;
+
+struct Vertex;
+typedef std::shared_ptr<Vertex> Vertex_t;
 
 struct Vertex {
 
-  static constexpr size_t MAX_STR = 32;
+  static constexpr size_t MAX_STR = 64;
 
   enum class Type {
+    Unknown,
     Gpu,
     Ppc,
     Intel,
+    Bridge, // PCI host bridge
+    PciDev,
   } type_;
 
   std::set<Edge_t> edges_;
@@ -30,29 +76,79 @@ struct Vertex {
     struct GpuData {
     } gpu_;
     struct PpcData {
+      unsigned idx; // hwloc index
       char model[MAX_STR];
       int revision;
     } ppc_;
     struct IntelData {
+      unsigned idx; // hwloc index
       char model[MAX_STR];
       char vendor[MAX_STR];
       int modelNumber;
       int familyNumber;
       int stepping;
     } intel_;
+    struct BridgeData {
+      PciAddress addr;
+      PciAddress domain;
+      PciAddress secondaryBus;
+      PciAddress subordinateBus;
+    } bridge_;
+    struct PciDevData {
+      char name[MAX_STR];
+      PciAddress addr;
+      float linkSpeed;
+    } pciDev_;
   } data_;
-};
 
-typedef std::shared_ptr<Vertex> Vertex_t;
+  Vertex(Type type) : type_(type) { std::memset(&data_, 0, sizeof(data_)); }
+  Vertex() : Vertex(Type::Unknown) {}
+
+  static Vertex_t new_bridge(const PciAddress &addr, unsigned short dnDom,
+                             unsigned char dnSecBus, unsigned char dnSubBus) {
+    auto v = std::make_shared<Vertex>(Vertex::Type::Bridge);
+    v->data_.bridge_.addr = addr;
+    v->data_.bridge_.domain = {dnDom, 0, 0, 0};
+    v->data_.bridge_.secondaryBus = {0, dnSecBus, 0, 0};
+    v->data_.bridge_.subordinateBus = {0, dnSubBus, 0, 0};
+    return v;
+  }
+
+  static Vertex_t new_pci_device(const char *name, const PciAddress &addr, float linkSpeed) {
+    auto v = std::make_shared<Vertex>(Vertex::Type::PciDev);
+    std::strncpy(v->data_.pciDev_.name, name, MAX_STR);
+    v->data_.pciDev_.addr = addr;
+    v->data_.pciDev_.linkSpeed = linkSpeed;
+    return v;
+  }
+
+  std::string str() const {
+    switch (type_) {
+    case Type::Bridge: {
+      std::string s = "bridge ";
+      s += data_.bridge_.addr.str();
+      return s;
+    }
+    case Type::PciDev: {
+      std::string s = data_.pciDev_.name;
+      s += " @ " + data_.pciDev_.addr.str();
+      return s;
+    }
+    default:
+      return "vertex";
+    }
+  }
+};
 
 struct Edge {
 
   static const int64_t QPI_GT = 1e9;
 
   enum class Type {
+    Unknown,
     Qpi,
     Xbus,
-    Unknown,
+    Pci,
   } type_;
 
   Vertex_t u_;
@@ -65,11 +161,21 @@ struct Edge {
     struct XbusData {
       int64_t bw_;
     } xbus_;
+    struct PciData {
+      float linkSpeed_;
+    } pci_;
   } data_;
 
-  
-  Edge(Type type) : type_(type), u_(nullptr), v_(nullptr) {}
+  Edge(Type type) : type_(type), u_(nullptr), v_(nullptr) {
+    std::memset(&data_, 0, sizeof(data_));
+  }
   Edge() : Edge(Type::Unknown) {}
+
+  static Edge_t new_pci(float linkSpeed) {
+    auto e = std::make_shared<Edge>(Edge::Type::Pci);
+    e->data_.pci_.linkSpeed_ = linkSpeed;
+    return e;
+  }
 
   int64_t bandwidth() {
     switch (type_) {
@@ -77,6 +183,8 @@ struct Edge {
       return data_.qpi_.links_ * data_.qpi_.speed_;
     case Type::Xbus:
       return data_.xbus_.bw_;
+    case Type::Pci:
+      return data_.pci_.linkSpeed_;
     case Type::Unknown:
       assert(0 && "bandwidth() called on unknown edge");
       return -1;
@@ -86,8 +194,6 @@ struct Edge {
     }
   }
 };
-
-
 
 struct EdgeEq {
   Edge *e_;
@@ -116,16 +222,10 @@ public:
    */
   Graph() {}
 
-  const std::set<Edge_t> &edges() const {
-    return edges_;
-  }
-  std::set<Edge_t> &edges() {
-    return edges_;
-  }
+  const std::set<Edge_t> &edges() const { return edges_; }
+  std::set<Edge_t> &edges() { return edges_; }
 
-  const std::set<Vertex_t> &vertices() const {
-    return vertices_;
-  }
+  const std::set<Vertex_t> &vertices() const { return vertices_; }
 
   template <Vertex::Type T> std::set<Vertex_t> vertices() {
     std::set<Vertex_t> ret;
@@ -143,8 +243,7 @@ public:
     auto it = std::find_if(vertices_.begin(), vertices_.end(), VertexEq(v));
     if (it == vertices_.end()) {
       return insert_vertex(std::shared_ptr<Vertex>(v));
-    }
-    else {
+    } else {
       return *it;
     }
   }
@@ -160,8 +259,7 @@ public:
     auto it = std::find_if(edges_.begin(), edges_.end(), EdgeEq(e));
     if (it == edges_.end()) {
       return insert_edge(std::shared_ptr<Edge>(e));
-    }
-    else {
+    } else {
       return *it;
     }
   }
@@ -221,6 +319,32 @@ public:
     edges_.erase(it);
     return ret;
   }
+
+  Vertex_t get_package(unsigned idx) {
+    for (auto v : vertices<Vertex::Type::Intel>()) {
+      if (v->data_.intel_.idx == idx) {
+        return v;
+      }
+    }
+    for (auto v : vertices<Vertex::Type::Ppc>()) {
+      if (v->data_.ppc_.idx == idx) {
+        return v;
+      }
+    }
+
+    return nullptr;
+  }
+
+Vertex_t get_bridge_for_address(const PciAddress &address) {
+  for (const auto &br : vertices<Vertex::Type::Bridge>()) {
+    if (br->data_.bridge_.domain.domain_ == address.domain_ &&
+        br->data_.bridge_.secondaryBus.bus_ == address.bus_) {
+      return br;
+    }
+  }
+
+  return nullptr;
+}
 
   std::vector<Path> paths(const Vertex_t src, const Vertex_t dst) {
 
@@ -282,7 +406,6 @@ public:
 private:
   std::set<std::shared_ptr<Vertex>> vertices_;
   std::set<std::shared_ptr<Edge>> edges_;
-
 };
 
 } // namespace hwgraph
