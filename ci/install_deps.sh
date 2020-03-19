@@ -23,7 +23,7 @@ cd $HOME
 ## install hwloc
 sudo apt-get update 
 sudo apt-get install -y --no-install-recommends \
-  hwloc
+  libhwloc-dev
 
 ## install CUDA
 if [[ $USE_NVML == "ON" ]]; then
@@ -39,5 +39,15 @@ if [[ $USE_NVML == "ON" ]]; then
     sudo dpkg -i cuda.deb
     sudo apt-get update 
     sudo apt-get install -y --no-install-recommends \
-    cuda-toolkit-10-2
+      cuda-toolkit-10-2
+    find /usr/local/cuda-10.2 -name "libnvidia-ml.so"
+
+    ls -l /usr/local/cuda-10.2/lib64/stubs
+
+    ## FindCUDAToolkit doesn't seem to look for libraries in the targets folder
+    # if [[ $TRAVIS_CPU_ARCH == "ppc64le" ]]; then
+    #     sudo ln -s /usr/local/cuda-10.2/targets/ppc64le-linux/lib/stubs/libnvidia-ml.so /usr/local/cuda-10.2/lib64/stubs/libnvidia-ml.so
+    # elif [[ $TRAVIS_CPU_ARCH == "amd64" ]]; then
+    #     sudo ln -s /usr/local/cuda-10.2/targets/x86_64-linux/lib/stubs/libnvidia-ml.so /usr/local/cuda-10.2/lib64/stubs/libnvidia-ml.so
+    # fi
 fi

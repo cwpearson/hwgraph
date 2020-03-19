@@ -30,6 +30,13 @@ target_compile_features(hwgraph INTERFACE cxx_std_11)
 
 if (USE_NVML)
   find_package(CUDAToolkit REQUIRED)
+  if (CUDAToolkit_FOUND)
+    message(STATUS "found CUDAToolkit " ${CUDAToolkit_LIBRARY_DIR})
+    message(STATUS "CUDA_nvml_LIBRARY " ${CUDA_nvml_LIBRARY})
+    message(STATUS "CUDAToolkit_LIBRARY_DIR " ${CUDAToolkit_LIBRARY_DIR})
+    message(STATUS "CUDAToolkit_INCLUDE_DIRS " ${CUDAToolkit_INCLUDE_DIRS})
+  endif()
+
   target_link_libraries(hwgraph INTERFACE CUDA::nvml)
   target_compile_definitions(hwgraph INTERFACE -DHWGRAPH_USE_NVML=1)
 else()
