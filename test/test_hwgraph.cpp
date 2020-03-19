@@ -23,5 +23,6 @@ TEST_CASE("hwgraph", "[hwloc][nvml]") {
       ++numPackages;
     }
   }
-  REQUIRE(1 == numPackages);
+  REQUIRE(1 <= numPackages);
+  REQUIRE(8 >= numPackages);
 }
