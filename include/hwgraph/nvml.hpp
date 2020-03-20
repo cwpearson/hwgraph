@@ -163,11 +163,10 @@ inline void add_nvlinks(hwgraph::Graph &graph) {
       if (i->type_ == Edge::Type::Nvlink) {
         for (auto &j : graph.edges()) {
           if (i->same_vertices(j)) {
-
             std::cerr << "add_nvlinks(): combining " << i->str() << " and " << j->str() << "\n"; 
-
             assert(i->data_.nvlink.version == j->data_.nvlink.version);
             i->data_.nvlink.lanes += j->data_.nvlink.lanes;
+            std::cerr << "add_nvlinks(): into " << i->str() << "\n"; 
             graph.erase(j); // invalidated iterators
             changed = true;
             goto loop_end;
