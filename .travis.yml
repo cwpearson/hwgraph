@@ -19,6 +19,4 @@ install:
 
 script:
   - ci/build.sh || travis_terminate 1;
-
-test:
   - ci/test.sh || travis_terminate 1;
