@@ -9,74 +9,10 @@
 #include <sstream>
 #include <vector>
 
+#include "pci_address.hpp"
+#include "vertex_data.hpp"
+
 namespace hwgraph {
-
-struct PciAddress {
-  typedef unsigned short domain_type;
-  typedef unsigned char bus_type;
-  typedef unsigned char dev_type;
-  typedef unsigned char func_type;
-
-  domain_type domain_;
-  bus_type bus_;
-  dev_type dev_;
-  func_type func_;
-
-  bool operator==(const PciAddress &rhs) const noexcept {
-    return rhs.domain_ == domain_ && rhs.bus_ == bus_ && rhs.dev_ == dev_ &&
-           rhs.func_ == func_;
-  }
-
-  bool operator<(const PciAddress &rhs) const noexcept {
-    if (rhs.domain_ < domain_) {
-      return true;
-    }
-    if (rhs.domain_ > domain_) {
-      return false;
-    }
-    if (rhs.bus_ < bus_) {
-      return true;
-    }
-    if (rhs.bus_ > bus_) {
-      return false;
-    }
-    if (rhs.dev_ < dev_) {
-      return true;
-    }
-    if (rhs.dev_ > dev_) {
-      return false;
-    }
-    return rhs.func_ < func_;
-  }
-
-  std::string domain_str() const {
-    std::stringstream ret;
-    ret << std::setfill('0') << std::setw(4) << std::hex << (size_t)domain_;
-    return ret.str();
-  }
-  std::string bus_str() const {
-    std::stringstream ret;
-    ret << std::setfill('0') << std::setw(2) << std::hex << (size_t)bus_;
-    return ret.str();
-  }
-  std::string dev_str() const {
-    std::stringstream ret;
-    ret << std::setfill('0') << std::setw(2) << std::hex << (size_t)dev_;
-    return ret.str();
-  }
-  std::string func_str() const {
-    std::stringstream ret;
-    ret << std::setfill('0') << std::setw(1) << std::hex << (size_t)func_;
-    return ret.str();
-  }
-
-  std::string str() const {
-    std::stringstream ret;
-    ret << domain_str() << ":" << bus_str() << ":" << dev_str() << "."
-        << func_str();
-    return ret.str();
-  }
-};
 
 struct Edge;
 typedef std::shared_ptr<Edge> Edge_t;
@@ -95,22 +31,13 @@ struct Vertex {
     Bridge, // PCI host bridge
     PciDev,
     Gpu,
+    NvLinkBridge,
+    NvSwitch,
   } type_;
 
   std::set<Edge_t> edges_;
  
-  char name_[MAX_STR];
-
-  struct PciDevice {
-    PciAddress addr;
-    unsigned short cls;
-    unsigned short vendor;
-    unsigned short device;
-    unsigned short subvendor;
-    unsigned short subdevice;
-    unsigned char revision;
-    float linkSpeed;
-  };
+  std::string name_;
 
   union Data {
     struct PpcData {
@@ -132,18 +59,24 @@ struct Vertex {
       PciAddress secondaryBus;
       PciAddress subordinateBus;
     } bridge_;
-    PciDevice pciDev_;
-    struct GpuData {
-      PciDevice pciDev;
-    } gpu_;
+    PciDeviceData pciDev;
+    GpuData gpu;
+    NvLinkBridgeData nvLinkBridge;
+    NvSwitchData nvSwitch;
   } data_;
 
   Vertex(Type type) : type_(type) { std::memset(&data_, 0, sizeof(data_)); }
   Vertex() : Vertex(Type::Unknown) {}
 
-  static Vertex_t new_bridge(const PciAddress &addr, unsigned short dnDom,
+  static Vertex_t new_bridge(const char *name, const PciAddress &addr, unsigned short dnDom,
                              unsigned char dnSecBus, unsigned char dnSubBus) {
     auto v = std::make_shared<Vertex>(Vertex::Type::Bridge);
+    if (name) {
+      v->name_ = name;
+    } else {
+      v->name_ = "unknown";
+    }
+
     v->data_.bridge_.addr = addr;
     v->data_.bridge_.domain = {dnDom, 0, 0, 0};
     v->data_.bridge_.secondaryBus = {0, dnSecBus, 0, 0};
@@ -154,40 +87,53 @@ struct Vertex {
   static Vertex_t new_pci_device(const char *name, const PciAddress &addr,
                                  float linkSpeed) {
     auto v = std::make_shared<Vertex>(Vertex::Type::PciDev);
-    std::strncpy(v->name_, name, MAX_STR);
-    v->data_.pciDev_.addr = addr;
-    v->data_.pciDev_.linkSpeed = linkSpeed;
+    v->name_ = name;
+    v->data_.pciDev.addr = addr;
+    v->data_.pciDev.linkSpeed = linkSpeed;
     return v;
   }
 
-  static Vertex_t new_gpu(const char *name, const PciDevice &pciDev) {
+  static Vertex_t new_gpu(const char *name, const PciDeviceData &pciDev) {
     auto v = std::make_shared<Vertex>(Vertex::Type::Gpu);
-    std::strncpy(v->name_, name, MAX_STR);
-    v->data_.gpu_.pciDev = pciDev;
+    v->name_ = name;
+    v->data_.gpu.pciDev = pciDev;
     return v;
+  }
+
+  bool is_pci_device() const noexcept {
+    return type_ == Type::PciDev || type_ == Type::Gpu;
   }
 
   std::string str() const {
+
+    std::string s = "{";
+    s += "name: " + name_;
+
     switch (type_) {
     case Type::Bridge: {
-      std::string s = "bridge ";
+      s += ", type: bridge, ";
       s += "addr=" + data_.bridge_.addr.str();
       s += ",dom=" + data_.bridge_.domain.str();
       s += ",sec=" + data_.bridge_.secondaryBus.str();
       s += ",sub=" + data_.bridge_.subordinateBus.str();
-      return s;
+      break;
     }
     case Type::PciDev: {
-      std::string s = name_;
-      s += " @ " + data_.pciDev_.addr.str();
-      return s;
+      s += ", type: pcidev, ";
+      s += "pcidev: " + data_.pciDev.str();
+      break;
     }
     case Type::Unknown: {
-      return "unknown";
+      s += ", type: pcidev, ";
+      break;
     }
     default:
-      return "vertex";
+      s += ", type: pcidev, ";
+      break;
     }
+
+    s += "}";
+    return s;
   }
 };
 
@@ -218,7 +164,9 @@ struct Edge {
       float linkSpeed_;
     } pci_;
     struct NvlinkData {
-    } nvlink_;
+      unsigned int version;
+      int64_t lanes;
+    } nvlink;
   } data_;
 
   Edge(Type type) : type_(type), u_(nullptr), v_(nullptr) {
@@ -232,8 +180,10 @@ struct Edge {
     return e;
   }
 
-  static Edge_t new_nvlink() {
+  static Edge_t new_nvlink(unsigned int version, int64_t lanes) {
     auto e = std::make_shared<Edge>(Edge::Type::Nvlink);
+    e->data_.nvlink.version = version;
+    e->data_.nvlink.lanes = lanes;
     return e;
   }
 
@@ -436,11 +386,11 @@ public:
         }
 
       } else if (v->type_ == Vertex::Type::PciDev) {
-        if (v->data_.pciDev_.addr == address) {
+        if (v->data_.pciDev.addr == address) {
           return v;
         }
       } else if (v->type_ == Vertex::Type::Gpu) {
-        if (v->data_.gpu_.pciDev.addr == address) {
+        if (v->data_.gpu.pciDev.addr == address) {
           return v;
         }
       }

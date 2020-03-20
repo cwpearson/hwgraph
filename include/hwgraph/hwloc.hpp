@@ -143,7 +143,7 @@ inline void visit_pci_bridge(hwgraph::Graph &graph, const hwloc_obj_t obj) {
   const auto up_pci = obj->attr->bridge.upstream.pci;
   const auto dn_pci = obj->attr->bridge.downstream.pci;
   PciAddress bridgeAddress = {up_pci.domain, up_pci.bus, up_pci.dev, up_pci.func};
-  auto bridge = Vertex::new_bridge(bridgeAddress,
+  auto bridge = Vertex::new_bridge(obj->name, bridgeAddress,
                                             dn_pci.domain, dn_pci.secondary_bus,
                                             dn_pci.subordinate_bus);
   graph.insert_vertex(bridge);
@@ -162,7 +162,7 @@ inline void visit_pci_bridge(hwgraph::Graph &graph, const hwloc_obj_t obj) {
 inline void visit_pci_device(hwgraph::Graph &graph, const hwloc_obj_t obj) {
 
   // get name
-  char *name;
+  const char *name;
   if (obj->name) {
     name = obj->name;
   } else {
@@ -173,17 +173,27 @@ inline void visit_pci_device(hwgraph::Graph &graph, const hwloc_obj_t obj) {
   const auto pci = obj->attr->pcidev;
   PciAddress objAddress = {pci.domain, pci.bus, pci.dev, pci.func};
 
-  auto newDevice = Vertex_t(nullptr);
+  Vertex_t newDevice = Vertex::new_pci_device(name, objAddress, pci.linkspeed);
+  newDevice->data_.pciDev.classId = obj->attr->pcidev.class_id;
+  newDevice->data_.pciDev.vendorId = obj->attr->pcidev.vendor_id;
+  newDevice->data_.pciDev.deviceId = obj->attr->pcidev.device_id;
+  newDevice->data_.pciDev.subvendorId = obj->attr->pcidev.subvendor_id;
+  newDevice->data_.pciDev.subdeviceId = obj->attr->pcidev.subdevice_id;
+  newDevice->data_.pciDev.revision = obj->attr->pcidev.revision;
+
+  // Add device
+  std::cerr << "visit_pci_device(): Add " << newDevice->str() << "\n";
+    graph.insert_vertex(newDevice);
 
   // Try to use OS Device children to create a more refined PCI device
   // https://github.com/cwpearson/hwcomm/blob/8b7213da5addbf7852ce72c1a09ec489d14d4419/src/backend_hwloc.cpp#L79
   if (!newDevice) {
-    newDevice = Vertex::new_pci_device(name, objAddress, pci.linkspeed);
+    // newDevice = Vertex::new_pci_device(name, objAddress, pci.linkspeed);
   }
 
-  // Add device
-  graph.insert_vertex(newDevice);
-  std::cerr << "visit_pci_device(): Added " << newDevice->str() << "\n";
+
+
+  
 
   // Link to parent
   const auto parent = obj->parent;
@@ -194,8 +204,6 @@ inline void visit_pci_device(hwgraph::Graph &graph, const hwloc_obj_t obj) {
   const auto &parentBridge = graph.get_bridge_for_address(objAddress);
   std::cerr << "visit_pci_device(): Parent is " << parentBridge->str() << "\n";
   auto link = Edge::new_pci(pci.linkspeed);
-
-  std::cerr << "visit_pci_device(): speed = " << link->data_.pci_.linkSpeed_ << "\n";
 
   graph.join(parentBridge, newDevice, link);
 }
@@ -218,7 +226,7 @@ inline void descend_pci_tree(hwloc_topology_t topology, hwgraph::Graph &graph,
     const auto dn_pci = obj->attr->bridge.downstream.pci;
     const PciAddress bridgeAddr = {up_pci.domain, up_pci.bus, up_pci.dev,
                                    up_pci.func};
-    auto hub = Vertex::new_bridge(bridgeAddr, dn_pci.domain,
+    auto hub = Vertex::new_bridge(obj->name, bridgeAddr, dn_pci.domain,
                                            dn_pci.secondary_bus,
                                            dn_pci.subordinate_bus);
 

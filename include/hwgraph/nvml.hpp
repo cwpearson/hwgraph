@@ -47,21 +47,9 @@ inline void add_gpus(hwgraph::Graph &graph) {
 
     int cudaMajor, cudaMinor;
     NVML(nvmlDeviceGetCudaComputeCapability(dev, &cudaMajor, &cudaMinor));
-    int maxNvLinks, width;
-    if (cudaMajor < 6) {
-      maxNvLinks = 0;
-      width = 0;
-    } else if (cudaMajor == 6) {
-      maxNvLinks = 4;
-      width = 12;
-    } else {
-      maxNvLinks = 6;
-      width = 16;
-    }
 
     // get the name of this device
     char name[64];
-    unsigned length;
     NVML(nvmlDeviceGetName(dev, name, sizeof(name)));
     
     // Get the PCI address of this device
@@ -69,11 +57,12 @@ inline void add_gpus(hwgraph::Graph &graph) {
     NVML(nvmlDeviceGetPciInfo(dev, &pciInfo));
     PciAddress addr = {pciInfo.domain, pciInfo.bus, pciInfo.device, 0};
     auto local = graph.get_pci(addr);
+    assert(local);
 
 
     if (local) {
       std::cerr << "add_gpus(): replace\n";
-      auto gpu = Vertex::new_gpu(name, local->data_.pciDev_);
+      auto gpu = Vertex::new_gpu(name, local->data_.pciDev);
       graph.replace(local, gpu);
     } else {
       std::cerr << "add_gpus(): new\n";
@@ -95,16 +84,13 @@ inline void add_nvlinks(hwgraph::Graph &graph) {
 
     int cudaMajor, cudaMinor;
     NVML(nvmlDeviceGetCudaComputeCapability(dev, &cudaMajor, &cudaMinor));
-    int maxNvLinks, width;
+    int maxNvLinks;
     if (cudaMajor < 6) {
       maxNvLinks = 0;
-      width = 0;
     } else if (cudaMajor == 6) {
       maxNvLinks = 4;
-      width = 12;
     } else {
       maxNvLinks = 6;
-      width = 16;
     }
 
     for (int l = 0; l < maxNvLinks; ++l) {
@@ -134,24 +120,33 @@ inline void add_nvlinks(hwgraph::Graph &graph) {
 
       std::cerr << "add_nvlinks(): remote " << addr.str() << "\n";
 
+      unsigned int version;
+      NVML(nvmlDeviceGetNvLinkVersion (dev, l, &version));
+
       if (remote->type_ == Vertex::Type::Gpu) {
         std::cerr << "connect to remote GPU\n";
 
         // nvlink will be visible from both sides, so only connect one way
-        if (local->data_.gpu_.pciDev.addr < remote->data_.gpu_.pciDev.addr) {
-          auto link = Edge::new_nvlink();
+        if (local->data_.gpu.pciDev.addr < remote->data_.gpu.pciDev.addr) {
+          auto link = Edge::new_nvlink(version, 1);
           graph.join(local, remote, link);
         }
 
-      } else if (remote->type_ == Vertex::Type::Bridge) {
-        auto link = Edge::new_nvlink();
+      } else if (remote->type_ == Vertex::Type::NvLinkBridge) {
+        auto link = Edge::new_nvlink(version, 1);
         graph.join(local, remote, link);
-      } else {
+      } else if (remote->type_ == Vertex::Type::NvSwitch) {
         std::cerr << "nvswitch?\n";
+        assert(0);
+      } else {
+        std::cerr << "unexpected nvlink endpoint\n";
         assert(0);
       }
     }
   }
+
+  // join nvlinks together
+
 }
 
 } // namespace nvml
