@@ -270,7 +270,7 @@ struct Edge {
     switch (type_) {
     case Type::Nvlink: {
       s += "type: nvlink, ";
-      s += "lanes: " + std::to_string(data_.nvlink.lanes) + ","
+      s += "lanes: " + std::to_string(data_.nvlink.lanes) + ",";
       s += "version: " + std::to_string(data_.nvlink.version);
       break;
     }
