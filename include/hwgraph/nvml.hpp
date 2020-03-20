@@ -124,7 +124,7 @@ inline void add_nvlinks(hwgraph::Graph &graph) {
       NVML(nvmlDeviceGetNvLinkVersion (dev, l, &version));
 
       if (remote->type_ == Vertex::Type::Gpu) {
-        std::cerr << "connect to remote GPU\n";
+        std::cerr << "remote is " << remote->str() << "\n";
 
         // nvlink will be visible from both sides, so only connect one way
         if (local->data_.gpu.pciDev.addr < remote->data_.gpu.pciDev.addr) {
@@ -133,10 +133,12 @@ inline void add_nvlinks(hwgraph::Graph &graph) {
         }
 
       } else if (remote->type_ == Vertex::Type::NvLinkBridge) {
+        std::cerr << "remote is " << remote->str() << "\n";
         auto link = Edge::new_nvlink(version, 1);
         graph.join(local, remote, link);
       } else if (remote->type_ == Vertex::Type::NvSwitch) {
         std::cerr << "nvswitch?\n";
+        std::cerr << "remote is " << remote->str() << "\n";
         assert(0);
       } else {
         std::cerr << "unexpected nvlink endpoint\n";
