@@ -121,6 +121,7 @@ inline void add_nvlinks(hwgraph::Graph &graph) {
       just directly connect to whatever CPU is closest.
       */
       if (!remote) {
+	std::cerr << "searching for closest package\n";
         auto p = graph.shortest_path(local, Vertex::is_package);
         remote = p.second;
       }

@@ -477,15 +477,17 @@ public:
     // attach next to vertices
     next->u_ = orig->u_;
     next->v_ = orig->v_;
-
+    
     // delete original edge
-    return erase(orig);
+    auto ret = erase(orig);
+    assert(0 == edges_.count(orig));
+    return ret;
   }
 
   Vertex_t replace(Vertex_t orig, Vertex_t next) {
     assert(vertices_.count(orig));
 
-    // replace all edge terminators
+    // replace all edges with orig to be next
     for (auto &e : orig->edges_) {
       if (e->u_ == orig) {
         e->u_ = next;
@@ -495,8 +497,12 @@ public:
       }
     }
 
+    // copy all orig edges to next
+    next->edges_ = orig->edges_;
+
     // add new vertex
     vertices_.insert(next);
+
 
     // delete original vertex
     auto it = std::find(vertices_.begin(), vertices_.end(), orig);
@@ -561,7 +567,7 @@ public:
 template <typename T>
 void dump(const std::vector<T> v) {
   for (auto &e : v) {
-    std::cerr << e << " ";
+    std::cerr << e->str() << " ";
   }
   std::cerr << "\n";
 }
@@ -575,14 +581,12 @@ std::pair<Path, Vertex_t> shortest_path(const Vertex_t src, UnaryPredicate p) {
     std::set<Edge_t> visited; // the edges we have traversed
     std::deque<Path> worklist;
 
-    // std::cerr << "init worklist " << src->edges_.size() << "\n";
-
     // initialize worklist
     for (auto e : src->edges_) {
       Path path = {e};
       worklist.push_front(path);
       visited.insert(e);
-    }
+    } 
 
     while (!worklist.empty()) {
 

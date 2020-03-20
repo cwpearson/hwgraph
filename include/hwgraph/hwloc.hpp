@@ -196,28 +196,21 @@ inline void visit_pci_device(hwgraph::Graph &graph, const hwloc_obj_t obj) {
   if (newDevice) {
     std::cerr << "visit_pci_device(): Add " << newDevice->str() << "\n";
     graph.insert_vertex(newDevice);
-  }
-
-
-
-
-  // Try to use OS Device children to create a more refined PCI device
-  // https://github.com/cwpearson/hwcomm/blob/8b7213da5addbf7852ce72c1a09ec489d14d4419/src/backend_hwloc.cpp#L79
-  // if (!newDevice) {
-  // newDevice = Vertex::new_pci_device(name, objAddress, pci.linkspeed);
-  // }
-
-  // Link to parent
-  const auto parent = obj->parent;
-  assert(parent);
-  assert(0 == hwloc_compare_types(parent->type, HWLOC_OBJ_BRIDGE) &&
+    // Link to parent
+    const auto parent = obj->parent;
+    assert(parent);
+    assert(0 == hwloc_compare_types(parent->type, HWLOC_OBJ_BRIDGE) &&
          "Pci parent should be a bridge");
 
-  const auto &parentBridge = graph.get_bridge_for_address(objAddress);
-  std::cerr << "visit_pci_device(): Parent is " << parentBridge->str() << "\n";
-  auto link = Edge::new_pci(pci.linkspeed);
+    const auto &parentBridge = graph.get_bridge_for_address(objAddress);
+    std::cerr << "visit_pci_device(): Parent is " << parentBridge->str() << "\n";
+    auto link = Edge::new_pci(pci.linkspeed);
 
-  graph.join(parentBridge, newDevice, link);
+    graph.join(parentBridge, newDevice, link);
+  } else {
+
+  }
+
 }
 
 inline void descend_pci_tree(hwloc_topology_t topology, hwgraph::Graph &graph,
