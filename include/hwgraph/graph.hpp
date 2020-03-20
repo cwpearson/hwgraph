@@ -36,7 +36,7 @@ struct Vertex {
   } type_;
 
   std::set<Edge_t> edges_;
- 
+
   std::string name_;
 
   union Data {
@@ -68,13 +68,14 @@ struct Vertex {
   Vertex(Type type) : type_(type) { std::memset(&data_, 0, sizeof(data_)); }
   Vertex() : Vertex(Type::Unknown) {}
 
-  static Vertex_t new_bridge(const char *name, const PciAddress &addr, unsigned short dnDom,
-                             unsigned char dnSecBus, unsigned char dnSubBus) {
+  static Vertex_t new_bridge(const char *name, const PciAddress &addr,
+                             unsigned short dnDom, unsigned char dnSecBus,
+                             unsigned char dnSubBus) {
     auto v = std::make_shared<Vertex>(Vertex::Type::Bridge);
     if (name) {
       v->name_ = name;
     } else {
-      v->name_ = "unknown";
+      v->name_ = "nullptr";
     }
 
     v->data_.bridge_.addr = addr;
@@ -87,7 +88,11 @@ struct Vertex {
   static Vertex_t new_pci_device(const char *name, const PciAddress &addr,
                                  float linkSpeed) {
     auto v = std::make_shared<Vertex>(Vertex::Type::PciDev);
-    v->name_ = name;
+    if (name) {
+      v->name_ = name;
+    } else {
+      v->name_ = "nullptr";
+    }
     v->data_.pciDev.addr = addr;
     v->data_.pciDev.linkSpeed = linkSpeed;
     return v;
@@ -95,24 +100,33 @@ struct Vertex {
 
   static Vertex_t new_gpu(const char *name, const PciDeviceData &pciDev) {
     auto v = std::make_shared<Vertex>(Vertex::Type::Gpu);
-    v->name_ = name;
+    if (name) {
+      v->name_ = name;
+    } else {
+      v->name_ = "nullptr";
+    }
     v->data_.gpu.pciDev = pciDev;
     return v;
   }
 
-  static Vertex_t new_nvlink_bridge(const char *name, const PciDeviceData &pciDev) {
+  static Vertex_t new_nvlink_bridge(const char *name,
+                                    const PciDeviceData &pciDev) {
     auto v = std::make_shared<Vertex>(Vertex::Type::NvLinkBridge);
-    v->name_ = name;
+    if (name) {
+      v->name_ = name;
+    } else {
+      v->name_ = "nullptr";
+    }
     v->data_.nvLinkBridge.pciDev = pciDev;
     return v;
   }
 
   bool is_pci_device() const noexcept {
-    return type_ == Type::PciDev || type_ == Type::Gpu;
+    return type_ == Type::PciDev || type_ == Type::Gpu ||
+           type_ == Type::NvLinkBridge || type_ == Type::NvSwitch;
   }
 
   std::string str() const {
-
     std::string s = "{";
     s += "name: " + name_;
 
