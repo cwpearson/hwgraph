@@ -12,12 +12,10 @@ inline void add_packages(hwgraph::Graph &graph) {
 
   hwloc_topology_init(&topology);
   hwloc_topology_set_flags(topology, HWLOC_TOPOLOGY_FLAG_WHOLE_SYSTEM);
-  // hwloc_topology_set_all_types_filter(topology, HWLOC_TYPE_FILTER_KEEP_ALL);
   hwloc_topology_load(topology);
 
   // Add packages to system
 
-  // p266 of https://www.open-mpi.org/projects/hwloc/doc/hwloc-v2.1.0-letter.pdf
   const int depth = hwloc_get_type_depth(topology, HWLOC_OBJ_PACKAGE);
   if (depth == HWLOC_TYPE_DEPTH_UNKNOWN) {
     assert(0 && "Can't determine number of packages");
@@ -186,15 +184,22 @@ inline void visit_pci_device(hwgraph::Graph &graph, const hwloc_obj_t obj) {
   newDevice->data_.pciDev.subdeviceId = obj->attr->pcidev.subdevice_id;
   newDevice->data_.pciDev.revision = obj->attr->pcidev.revision;
 
-  //  IBM device 04ea (NvLink Bridge)
+  /*  IBM device 04ea is an emulated NvLink Bridge, not a real device
+      we will handle this case in the nvml code
+  */
   if (newDevice->data_.pciDev.vendorId == 0x1014 &&
       newDevice->data_.pciDev.deviceId == 0x4ea) {
-    newDevice = Vertex::new_nvlink_bridge(name, newDevice->data_.pciDev);
+    newDevice = nullptr;
+  } 
+  
+  // add device
+  if (newDevice) {
+    std::cerr << "visit_pci_device(): Add " << newDevice->str() << "\n";
+    graph.insert_vertex(newDevice);
   }
 
-  // Add device
-  std::cerr << "visit_pci_device(): Add " << newDevice->str() << "\n";
-  graph.insert_vertex(newDevice);
+
+
 
   // Try to use OS Device children to create a more refined PCI device
   // https://github.com/cwpearson/hwcomm/blob/8b7213da5addbf7852ce72c1a09ec489d14d4419/src/backend_hwloc.cpp#L79

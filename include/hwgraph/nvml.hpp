@@ -116,7 +116,16 @@ inline void add_nvlinks(hwgraph::Graph &graph) {
       addr = {pciInfo.domain, pciInfo.bus, pciInfo.device, 0};
       auto remote = graph.get_pci(addr);
 
-      std::cerr << "add_nvlinks(): remote " << addr.str() << "\n";
+
+      /* the NvLink Bridges on the CPUs are emulated PCI device that we did not add during PCI discovery
+      just directly connect to whatever CPU is closest.
+      */
+      if (!remote) {
+        auto p = graph.shortest_path(local, Vertex::is_package);
+        remote = p.second;
+      }
+
+      if (!remote) std::cerr << "add_nvlinks(): couldn't connect nvlink to anything\n";
 
       unsigned int version;
       NVML(nvmlDeviceGetNvLinkVersion(dev, l, &version));
@@ -130,7 +139,7 @@ inline void add_nvlinks(hwgraph::Graph &graph) {
           graph.join(local, remote, link);
         }
 
-      } else if (remote->type_ == Vertex::Type::NvLinkBridge) {
+      } else if (remote->type_ == Vertex::Type::Ppc) {
         std::cerr << "remote is " << remote->str() << "\n";
         auto link = Edge::new_nvlink(version, 1);
         graph.join(local, remote, link);

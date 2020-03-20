@@ -104,4 +104,34 @@ TEST_CASE("graph", "") {
     paths = g.paths(dst, src);
     REQUIRE(2 == paths.size());
   }
+
+  SECTION("triangle") {
+    auto a = std::make_shared<Vertex>();
+    auto b = std::make_shared<Vertex>();
+    auto c = std::make_shared<Vertex>();
+    auto eab = std::make_shared<Edge>();
+    auto eac = std::make_shared<Edge>();
+    auto ebc = std::make_shared<Edge>();
+
+    g.join(a, b, eab);
+    g.join(a, c, eac);
+    g.join(b, c, ebc);
+
+    std::vector<Graph::Path> paths;
+    Graph::Path path;
+
+    paths = g.paths(a, b);
+    REQUIRE(2 == paths.size());
+    paths = g.paths(a, c);
+    REQUIRE(2 == paths.size());
+    paths = g.paths(b, c);
+    REQUIRE(2 == paths.size());
+
+    auto f = [b](Vertex_t v){return v == b;};
+    auto p = g.shortest_path(a, f);
+    REQUIRE(p.first.size() == 1);
+    REQUIRE(p.second == b);
+
+  }
+
 }

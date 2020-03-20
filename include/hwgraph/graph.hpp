@@ -127,6 +127,11 @@ struct Vertex {
            type_ == Type::NvLinkBridge || type_ == Type::NvSwitch;
   }
 
+  static bool is_package(const Vertex_t v) noexcept {
+    assert(v);
+    return v->type_ == Type::Ppc || v->type_ == Type::Intel;
+  }
+
   std::string str() const {
     std::string s = "{";
     s += "name: " + name_;
@@ -247,6 +252,10 @@ struct Edge {
     auto e = std::make_shared<Edge>(Edge::Type::Xbus);
     e->data_.xbus_.bw_ = bw;
     return e;
+  }
+
+  bool has_vertex(const Vertex_t v) const noexcept {
+    return (u_ == v || v_ == v);
   }
 
   Vertex_t other_vertex(const Vertex_t v) const noexcept {
@@ -548,6 +557,71 @@ public:
     return nullptr;
   }
 
+
+template <typename T>
+void dump(const std::vector<T> v) {
+  for (auto &e : v) {
+    std::cerr << e << " ";
+  }
+  std::cerr << "\n";
+}
+
+/*
+  finds the shortest path from src to a vertex for which UnaryPredicate(vertex) yields true
+*/
+template <typename UnaryPredicate>
+std::pair<Path, Vertex_t> shortest_path(const Vertex_t src, UnaryPredicate p) {
+
+    std::set<Edge_t> visited; // the edges we have traversed
+    std::deque<Path> worklist;
+
+    // std::cerr << "init worklist " << src->edges_.size() << "\n";
+
+    // initialize worklist
+    for (auto e : src->edges_) {
+      Path path = {e};
+      worklist.push_front(path);
+      visited.insert(e);
+    }
+
+    while (!worklist.empty()) {
+
+      Path next = worklist.back();
+      worklist.pop_back();
+
+      Vertex_t u = next.back()->u_;
+      Vertex_t v = next.back()->v_;
+      if (p(u)) {
+        return std::make_pair(next, u);
+      } else if (p(v)) {
+        return std::make_pair(next, v);
+      } else {
+        // make new paths for work list
+        for (auto e : u->edges_) {
+          Path path = next;
+          if (0 == visited.count(e)) {
+            path.push_back(e);
+            visited.insert(e);
+            worklist.push_front(path);
+          }
+        }
+        for (auto e : v->edges_) {
+          Path path = next;
+          if (0 == visited.count(e)) {
+            path.push_back(e);
+            visited.insert(e);
+            worklist.push_front(path);
+          }
+        }
+      }
+    }
+
+    return std::make_pair(Path(), nullptr);
+  }
+
+  /*
+  return all paths from src to dst
+*/
   std::vector<Path> paths(const Vertex_t src, const Vertex_t dst) {
 
     std::vector<Path> ret; // the paths from src to dst
