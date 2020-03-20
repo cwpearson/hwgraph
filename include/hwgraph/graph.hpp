@@ -100,6 +100,13 @@ struct Vertex {
     return v;
   }
 
+  static Vertex_t new_nvlink_bridge(const char *name, const PciDeviceData &pciDev) {
+    auto v = std::make_shared<Vertex>(Vertex::Type::NvLinkBridge);
+    v->name_ = name;
+    v->data_.nvLinkBridge.pciDev = pciDev;
+    return v;
+  }
+
   bool is_pci_device() const noexcept {
     return type_ == Type::PciDev || type_ == Type::Gpu;
   }

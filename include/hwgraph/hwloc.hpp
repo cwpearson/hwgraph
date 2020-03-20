@@ -12,7 +12,7 @@ inline void add_packages(hwgraph::Graph &graph) {
 
   hwloc_topology_init(&topology);
   hwloc_topology_set_flags(topology, HWLOC_TOPOLOGY_FLAG_WHOLE_SYSTEM);
-  //hwloc_topology_set_all_types_filter(topology, HWLOC_TYPE_FILTER_KEEP_ALL);
+  // hwloc_topology_set_all_types_filter(topology, HWLOC_TYPE_FILTER_KEEP_ALL);
   hwloc_topology_load(topology);
 
   // Add packages to system
@@ -48,7 +48,7 @@ inline void add_packages(hwgraph::Graph &graph) {
 
 // Section 9.2 (p.37)
 #ifdef __x86_64__
-        
+
         if (std::string("CPUModel") == obj->infos[j].name) {
           std::strncpy(v->data_.intel_.model, obj->infos[j].value,
                        Vertex::MAX_STR);
@@ -95,7 +95,8 @@ inline void add_packages(hwgraph::Graph &graph) {
     for (auto i : graph.vertices<Vertex::Type::Intel>()) {
       for (auto j : graph.vertices<Vertex::Type::Intel>()) {
         if (i != j) {
-          if (i->data_.intel_.familyNumber == 6 && i->data_.intel_.modelNumber == 0x4f) {
+          if (i->data_.intel_.familyNumber == 6 &&
+              i->data_.intel_.modelNumber == 0x4f) {
             Edge *edge = new Edge(Edge::Type::Qpi);
             edge->data_.qpi_.links_ = 2;
             edge->data_.qpi_.speed_ = 8 * Edge::QPI_GT;
@@ -112,7 +113,6 @@ inline void add_packages(hwgraph::Graph &graph) {
     hwloc_topology_destroy(topology);
   }
 }
-
 
 inline bool is_hostbridge(const hwloc_obj_t obj) {
   auto result = hwloc_compare_types(obj->type, HWLOC_OBJ_BRIDGE);
@@ -142,10 +142,11 @@ inline void visit_pci_bridge(hwgraph::Graph &graph, const hwloc_obj_t obj) {
   // Insert this object
   const auto up_pci = obj->attr->bridge.upstream.pci;
   const auto dn_pci = obj->attr->bridge.downstream.pci;
-  PciAddress bridgeAddress = {up_pci.domain, up_pci.bus, up_pci.dev, up_pci.func};
-  auto bridge = Vertex::new_bridge(obj->name, bridgeAddress,
-                                            dn_pci.domain, dn_pci.secondary_bus,
-                                            dn_pci.subordinate_bus);
+  PciAddress bridgeAddress = {up_pci.domain, up_pci.bus, up_pci.dev,
+                              up_pci.func};
+  auto bridge =
+      Vertex::new_bridge(obj->name, bridgeAddress, dn_pci.domain,
+                         dn_pci.secondary_bus, dn_pci.subordinate_bus);
   graph.insert_vertex(bridge);
   std::cerr << "visit_pci_bridge(): Added " << bridge->str() << "\n";
 
@@ -154,10 +155,10 @@ inline void visit_pci_bridge(hwgraph::Graph &graph, const hwloc_obj_t obj) {
 
   // Link to parent
   auto link = Edge::new_pci(up_pci.linkspeed);
-  std::cerr << "Link " << parent << " and " << bridge << " @ " << up_pci.linkspeed << "\n";
+  std::cerr << "Link " << parent << " and " << bridge << " @ "
+            << up_pci.linkspeed << "\n";
   graph.join(parent, bridge, link);
 }
-
 
 inline void visit_pci_device(hwgraph::Graph &graph, const hwloc_obj_t obj) {
 
@@ -181,19 +182,21 @@ inline void visit_pci_device(hwgraph::Graph &graph, const hwloc_obj_t obj) {
   newDevice->data_.pciDev.subdeviceId = obj->attr->pcidev.subdevice_id;
   newDevice->data_.pciDev.revision = obj->attr->pcidev.revision;
 
+  //  IBM device 04ea (NvLink Bridge)
+  if (newDevice->data_.pciDev.vendorId == 0x1014 &&
+      newDevice->data_.pciDev.deviceId == 0x4ea) {
+    newDevice = Vertex::new_nvlink_bridge(name, newDevice->data_.pciDev);
+  }
+
   // Add device
   std::cerr << "visit_pci_device(): Add " << newDevice->str() << "\n";
-    graph.insert_vertex(newDevice);
+  graph.insert_vertex(newDevice);
 
   // Try to use OS Device children to create a more refined PCI device
   // https://github.com/cwpearson/hwcomm/blob/8b7213da5addbf7852ce72c1a09ec489d14d4419/src/backend_hwloc.cpp#L79
-  if (!newDevice) {
-    // newDevice = Vertex::new_pci_device(name, objAddress, pci.linkspeed);
-  }
-
-
-
-  
+  // if (!newDevice) {
+  // newDevice = Vertex::new_pci_device(name, objAddress, pci.linkspeed);
+  // }
 
   // Link to parent
   const auto parent = obj->parent;
@@ -227,11 +230,10 @@ inline void descend_pci_tree(hwloc_topology_t topology, hwgraph::Graph &graph,
     const PciAddress bridgeAddr = {up_pci.domain, up_pci.bus, up_pci.dev,
                                    up_pci.func};
     auto hub = Vertex::new_bridge(obj->name, bridgeAddr, dn_pci.domain,
-                                           dn_pci.secondary_bus,
-                                           dn_pci.subordinate_bus);
+                                  dn_pci.secondary_bus, dn_pci.subordinate_bus);
 
     std::cerr << "descend_pci_tree(): " << hub->str() << "\n";
-      
+
     graph.insert_vertex(hub);
 
     for (unsigned i = 0; i < obj->infos_count; ++i) {
@@ -247,7 +249,7 @@ inline void descend_pci_tree(hwloc_topology_t topology, hwgraph::Graph &graph,
         hwloc_get_nbobjs_by_type(topology, HWLOC_OBJ_PACKAGE);
     assert(numPackages);
     std::cerr << "descend_pci_tree(): Searching " << numPackages
-                           << " packages for corresponding NUMA nodes\n";
+              << " packages for corresponding NUMA nodes\n";
     for (int pkgIdx = 0; pkgIdx < numPackages; ++pkgIdx) {
       hwloc_obj_t upstreamObj =
           hwloc_get_obj_by_type(topology, HWLOC_OBJ_PACKAGE, pkgIdx);
@@ -259,14 +261,14 @@ inline void descend_pci_tree(hwloc_topology_t topology, hwgraph::Graph &graph,
                                   upstreamObj->nodeset)) {
         // Link between this host bridge and the upstream soc
 
-        std::cerr << "descend_pci_tree(): linking with package " << pkgIdx << " @ " << up_pci.linkspeed << "\n";
+        std::cerr << "descend_pci_tree(): linking with package " << pkgIdx
+                  << " @ " << up_pci.linkspeed << "\n";
 
         auto link = Edge::new_pci(up_pci.linkspeed);
         graph.join(upstreamCompute, hub, link);
         break;
       }
     }
-
 
   } else if (is_pcibridge(obj)) {
     std::cerr << "descend_pci_tree(): PCI bridge!\n";
@@ -280,16 +282,15 @@ inline void descend_pci_tree(hwloc_topology_t topology, hwgraph::Graph &graph,
     std::cerr << "MISC device " << obj->name << "\n";
   } else if (obj->type == HWLOC_OBJ_OS_DEVICE) {
     std::cerr << "OS Device " << obj->name << "\n";
-    //visit_os_device(graph, obj, visited);
+    // visit_os_device(graph, obj, visited);
   } else {
     std::cerr << "Other kind of device " << obj->name << "\n";
     for (unsigned i = 0; i < obj->infos_count; ++i) {
-	    std::cerr << obj->infos[i].name << "::" << obj->infos[i].value << "\n";
+      std::cerr << obj->infos[i].name << "::" << obj->infos[i].value << "\n";
     }
     assert(obj->type != HWLOC_OBJ_BRIDGE); // should have caught these
     assert(0 && "How did we get here?");
   }
-
 
   visited.insert(obj);
   for (unsigned i = 0; i < obj->arity; ++i) {
@@ -298,14 +299,13 @@ inline void descend_pci_tree(hwloc_topology_t topology, hwgraph::Graph &graph,
   }
 }
 
-
 inline void add_pci(hwgraph::Graph &graph) {
-    hwloc_topology_t topology;
+  hwloc_topology_t topology;
 
   hwloc_topology_init(&topology);
   hwloc_topology_set_flags(topology, HWLOC_TOPOLOGY_FLAG_WHOLE_SYSTEM |
                                          HWLOC_TOPOLOGY_FLAG_IO_BRIDGES |
-					 HWLOC_TOPOLOGY_FLAG_WHOLE_IO);
+                                         HWLOC_TOPOLOGY_FLAG_WHOLE_IO);
   hwloc_topology_load(topology);
 
   // Descend down into each PCI bridge
