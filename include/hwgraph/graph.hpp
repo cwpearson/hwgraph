@@ -166,7 +166,16 @@ struct Vertex {
   }
 
   std::string dot_id() const { return std::to_string(uintptr_t(this)); }
-  std::string dot_label() const { return DotLabel(name_).str(); }
+
+  std::string dot_label() const {
+    switch (type_) {
+    case Type::NvLinkBridge:
+      return DotLabel("NvLink Bridge").str();
+    default:
+      return DotLabel(name_).str();
+    }
+  }
+
   std::string dot_shape() const { return "record"; }
   std::string dot_str() const {
     std::stringstream ss;
@@ -315,8 +324,7 @@ struct Edge {
           .with_field(std::to_string(data_.pci.linkSpeed))
           .str();
     case Type::Xbus:
-      return DotLabel("xbus")
-          .str();
+      return DotLabel("xbus").str();
     default:
       return "edge";
     }
