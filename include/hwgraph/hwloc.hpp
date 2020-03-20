@@ -33,10 +33,12 @@ inline void add_packages(hwgraph::Graph &graph) {
 
 #ifdef __x86_64__
       v->type_ = Vertex::Type::Intel;
-      v->data_.intel_.idx = i;
+      v->data_.intel.idx = i;
+      v->name_ = obj->name ? obj->name : "anonymous intel";
 #elif __PPC__
       v->type_ = Vertex::Type::Ppc;
       v->data_.ppc_.idx = i;
+      v->name_ = obj->name ? obj->name : "anonymous PPC";
 #endif
 
       // section 23.13 p. 266
@@ -50,22 +52,24 @@ inline void add_packages(hwgraph::Graph &graph) {
 #ifdef __x86_64__
 
         if (std::string("CPUModel") == obj->infos[j].name) {
-          std::strncpy(v->data_.intel_.model, obj->infos[j].value,
+          v->name_ = obj->infos[j].value;
+          std::strncpy(v->data_.intel.model, obj->infos[j].value,
                        Vertex::MAX_STR);
         } else if (std::string("CPUVendor") == obj->infos[j].name) {
-          std::strncpy(v->data_.intel_.vendor, obj->infos[j].value,
+          std::strncpy(v->data_.intel.vendor, obj->infos[j].value,
                        Vertex::MAX_STR);
         } else if (std::string("CPUModelNumber") == obj->infos[j].name) {
-          v->data_.intel_.modelNumber = std::atoi(obj->infos[j].value);
+          v->data_.intel.modelNumber = std::atoi(obj->infos[j].value);
         } else if (std::string("CPUFamilyNumber") == obj->infos[j].name) {
-          v->data_.intel_.familyNumber = std::atoi(obj->infos[j].value);
+          v->data_.intel.familyNumber = std::atoi(obj->infos[j].value);
         } else if (std::string("CPUStepping") == obj->infos[j].name) {
-          v->data_.intel_.stepping = std::atoi(obj->infos[j].value);
+          v->data_.intel.stepping = std::atoi(obj->infos[j].value);
         }
 #endif
 
 #ifdef __PPC__
         if (std::string("CPUModel") == obj->infos[j].name) {
+          v->name_ = obj->infos[j].value;
           std::strncpy(v->data_.ppc_.model, obj->infos[j].value,
                        Vertex::MAX_STR);
         } else if (std::string("CPURevision") == obj->infos[j].name) {
@@ -95,8 +99,8 @@ inline void add_packages(hwgraph::Graph &graph) {
     for (auto i : graph.vertices<Vertex::Type::Intel>()) {
       for (auto j : graph.vertices<Vertex::Type::Intel>()) {
         if (i != j) {
-          if (i->data_.intel_.familyNumber == 6 &&
-              i->data_.intel_.modelNumber == 0x4f) {
+          if (i->data_.intel.familyNumber == 6 &&
+              i->data_.intel.modelNumber == 0x4f) {
             Edge *edge = new Edge(Edge::Type::Qpi);
             edge->data_.qpi_.links_ = 2;
             edge->data_.qpi_.speed_ = 8 * Edge::QPI_GT;

@@ -9,6 +9,7 @@
 #include <sstream>
 #include <vector>
 
+#include "dot_label.hpp"
 #include "pci_address.hpp"
 #include "vertex_data.hpp"
 
@@ -52,7 +53,7 @@ struct Vertex {
       int modelNumber;
       int familyNumber;
       int stepping;
-    } intel_;
+    } intel;
     struct BridgeData {
       PciAddress addr;
       PciAddress domain;
@@ -75,7 +76,7 @@ struct Vertex {
     if (name) {
       v->name_ = name;
     } else {
-      v->name_ = "nullptr";
+      v->name_ = "anonymous bridge";
     }
 
     v->data_.bridge_.addr = addr;
@@ -91,7 +92,7 @@ struct Vertex {
     if (name) {
       v->name_ = name;
     } else {
-      v->name_ = "nullptr";
+      v->name_ = "anonymous pcidev";
     }
     v->data_.pciDev.addr = addr;
     v->data_.pciDev.linkSpeed = linkSpeed;
@@ -103,7 +104,7 @@ struct Vertex {
     if (name) {
       v->name_ = name;
     } else {
-      v->name_ = "nullptr";
+      v->name_ = "anonymous gpu";
     }
     v->data_.gpu.pciDev = pciDev;
     return v;
@@ -115,7 +116,7 @@ struct Vertex {
     if (name) {
       v->name_ = name;
     } else {
-      v->name_ = "nullptr";
+      v->name_ = "anonymous nvlink bridge";
     }
     v->data_.nvLinkBridge.pciDev = pciDev;
     return v;
@@ -163,6 +164,24 @@ struct Vertex {
     s += "}";
     return s;
   }
+
+  std::string dot_id() const { return std::to_string(uintptr_t(this)); }
+  std::string dot_label() const { return DotLabel(name_).str(); }
+  std::string dot_shape() const { return "record"; }
+  std::string dot_str() const {
+    std::stringstream ss;
+
+    ss << dot_id() << " ";
+    ss << "[ ";
+    if (!dot_shape().empty()) {
+      ss << "shape=" << dot_shape() << ",";
+    }
+    ss << "label=\"";
+    ss << dot_label();
+    ss << "\" ];";
+
+    return ss.str();
+  }
 };
 
 struct Edge {
@@ -189,8 +208,8 @@ struct Edge {
       int64_t bw_;
     } xbus_;
     struct PciData {
-      float linkSpeed_;
-    } pci_;
+      float linkSpeed;
+    } pci;
     struct NvlinkData {
       unsigned int version;
       int64_t lanes;
@@ -204,7 +223,7 @@ struct Edge {
 
   static Edge_t new_pci(float linkSpeed) {
     auto e = std::make_shared<Edge>(Edge::Type::Pci);
-    e->data_.pci_.linkSpeed_ = linkSpeed;
+    e->data_.pci.linkSpeed = linkSpeed;
     return e;
   }
 
@@ -246,7 +265,6 @@ struct Edge {
     return false;
   }
 
-
   int64_t bandwidth() {
     switch (type_) {
     case Type::Qpi:
@@ -254,7 +272,7 @@ struct Edge {
     case Type::Xbus:
       return data_.xbus_.bw_;
     case Type::Pci:
-      return data_.pci_.linkSpeed_;
+      return data_.pci.linkSpeed;
     case Type::Unknown:
       assert(0 && "bandwidth() called on unknown edge");
       return -1;
@@ -283,6 +301,34 @@ struct Edge {
     return s;
   }
 
+  std::string dot_rank() const { return ""; }
+
+  std::string dot_label() const {
+    switch (type_) {
+    case Type::Nvlink:
+      return DotLabel("nvlink")
+          .with_field(std::to_string(data_.nvlink.lanes))
+          .with_field(std::to_string(data_.nvlink.version))
+          .str();
+    case Type::Pci:
+      return DotLabel("pci")
+          .with_field(std::to_string(data_.pci.linkSpeed))
+          .str();
+    default:
+      return "edge";
+    }
+
+    return "edge";
+  }
+
+  std::string dot_attrs() const {
+    std::stringstream ret;
+    ret << " [ ";
+    ret << "label=\"" << dot_label() << "\"";
+    ret << " ];";
+
+    return ret.str();
+  }
 };
 
 struct EdgeEq {
@@ -404,7 +450,7 @@ public:
   Edge_t replace(Edge_t orig, Edge_t next) {
     assert(edges_.count(orig));
 
-    // insert new edge into vertices 
+    // insert new edge into vertices
     orig->u_->edges_.insert(next);
     orig->v_->edges_.insert(next);
 
@@ -442,7 +488,7 @@ public:
 
   Vertex_t get_package(unsigned idx) {
     for (auto v : vertices<Vertex::Type::Intel>()) {
-      if (v->data_.intel_.idx == idx) {
+      if (v->data_.intel.idx == idx) {
         return v;
       }
     }
@@ -548,9 +594,50 @@ public:
     return ret;
   }
 
+  std::string dot_str() const {
+    auto dot_header = [&]() {
+      std::string ret;
+      ret += "graph {\n";
+      return ret;
+    };
+    auto dot_footer = [&]() {
+      std::string ret;
+      ret += "}";
+      return ret;
+    };
+
+    auto dot_nodes = [&]() {
+      std::string ret;
+      for (const auto &v : vertices_) {
+        ret += v->dot_str() + "\n";
+      }
+      return ret;
+    };
+
+    auto dot_edges = [&]() {
+      std::string ret;
+      for (const auto &e : edges_) {
+        ret += e->u_->dot_id() + " -- " + e->v_->dot_id() + " ";
+        ret += e->dot_attrs() + "\n";
+        if (!e->dot_rank().empty()) {
+          ret += "{rank=" + e->dot_rank() + "; " + e->u_->dot_id() + "; " +
+                 e->v_->dot_id() + "};\n";
+        }
+      }
+      return ret;
+    };
+
+    std::string ret;
+    ret += dot_header();
+    ret += dot_nodes();
+    ret += dot_edges();
+    ret += dot_footer();
+    return ret;
+  }
+
 private:
   std::set<std::shared_ptr<Vertex>> vertices_;
   std::set<std::shared_ptr<Edge>> edges_;
-};
+}; // namespace nvml
 
 } // namespace hwgraph

@@ -25,4 +25,6 @@ TEST_CASE("hwgraph", "[hwloc][nvml]") {
   }
   REQUIRE(1 <= numPackages);
   REQUIRE(8 >= numPackages);
+
+  std::cerr << g.dot_str() << "\n";
 }
