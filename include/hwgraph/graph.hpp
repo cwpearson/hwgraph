@@ -269,13 +269,13 @@ struct Edge {
 
     switch (type_) {
     case Type::Nvlink: {
-      s += ", type: nvlink, ";
-      s += "lanes: " + std::to_string(data_.nvlink.lanes);
+      s += "type: nvlink, ";
+      s += "lanes: " + std::to_string(data_.nvlink.lanes) + ","
       s += "version: " + std::to_string(data_.nvlink.version);
       break;
     }
     default:
-      s += ", type: <unhandled in Edge::str()>";
+      s += "type: <unhandled in Edge::str()>";
       break;
     }
 
