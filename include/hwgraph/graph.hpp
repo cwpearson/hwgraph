@@ -143,6 +143,10 @@ struct Vertex {
       s += ", type: pcidev, ";
       s += "pcidev: " + data_.pciDev.str();
       break;
+    case Type::Gpu:
+      s += ", type: gpu, ";
+      s += "pcidev: " + data_.gpu.pciDev.str();
+      break;
     case Type::NvLinkBridge:
       s += ", type: nvlinkbridge, ";
       s += "pcidev: " + data_.pciDev.str();
