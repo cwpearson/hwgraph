@@ -125,17 +125,20 @@ struct Vertex {
       s += ",sub=" + data_.bridge_.subordinateBus.str();
       break;
     }
-    case Type::PciDev: {
+    case Type::PciDev:
       s += ", type: pcidev, ";
       s += "pcidev: " + data_.pciDev.str();
       break;
-    }
+    case Type::NvLinkBridge:
+      s += ", type: nvlinkbridge, ";
+      s += "pcidev: " + data_.pciDev.str();
+      break;
     case Type::Unknown: {
-      s += ", type: pcidev, ";
+      s += ", type: unknown";
       break;
     }
     default:
-      s += ", type: pcidev, ";
+      s += ", type: <unhandled in str()>";
       break;
     }
 
