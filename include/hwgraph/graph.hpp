@@ -314,6 +314,9 @@ struct Edge {
       return DotLabel("pci")
           .with_field(std::to_string(data_.pci.linkSpeed))
           .str();
+    case Type::Xbus:
+      return DotLabel("xbus")
+          .str();
     default:
       return "edge";
     }
