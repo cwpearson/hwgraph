@@ -162,7 +162,7 @@ inline void add_nvlinks(hwgraph::Graph &graph) {
     for (auto &i : graph.edges()) {
       if (i->type_ == Edge::Type::Nvlink) {
         for (auto &j : graph.edges()) {
-          if (i->same_vertices(j)) {
+          if (i != j && i->same_vertices(j)) {
             std::cerr << "add_nvlinks(): combining " << i->str() << " and " << j->str() << "\n"; 
             assert(i->data_.nvlink.version == j->data_.nvlink.version);
             i->data_.nvlink.lanes += j->data_.nvlink.lanes;
