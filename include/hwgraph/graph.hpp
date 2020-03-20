@@ -156,7 +156,7 @@ struct Vertex {
       break;
     }
     default:
-      s += ", type: <unhandled in str()>";
+      s += ", type: <unhandled in Vertex::str()>";
       break;
     }
 
@@ -221,6 +221,32 @@ struct Edge {
     return e;
   }
 
+  Vertex_t other_vertex(const Vertex_t v) const noexcept {
+    if (u_ == v) {
+      return v_;
+    } else if (v_ == v) {
+      return u_;
+    } else {
+      assert(0 && "vertex is not in edge");
+      return nullptr;
+    }
+  }
+
+  bool same_vertices(const Edge_t &other) const noexcept {
+    assert(u_);
+    assert(v_);
+    assert(other);
+    assert(other->u_);
+    assert(other->v_);
+    if (u_ == other->v_ && v_ == other->u_) {
+      return true;
+    } else if (u_ == other->u_ && v_ == other->v_) {
+      return true;
+    }
+    return false;
+  }
+
+
   int64_t bandwidth() {
     switch (type_) {
     case Type::Qpi:
@@ -237,6 +263,26 @@ struct Edge {
       return -1;
     }
   }
+
+  std::string str() const {
+    std::string s = "{";
+
+    switch (type_) {
+    case Type::Nvlink: {
+      s += ", type: nvlink, ";
+      s += "lanes: " + std::to_string(data_.nvlink.lanes);
+      s += "version: " + std::to_string(data_.nvlink.version);
+      break;
+    }
+    default:
+      s += ", type: <unhandled in Edge::str()>";
+      break;
+    }
+
+    s += "}";
+    return s;
+  }
+
 };
 
 struct EdgeEq {
@@ -346,13 +392,20 @@ public:
     return ret;
   }
 
+  Edge_t erase(Edge_t e) {
+    assert(edges_.count(e));
+    e->u_->edges_.erase(e);
+    e->v_->edges_.erase(e);
+    auto it = std::find(edges_.begin(), edges_.end(), e);
+    edges_.erase(it);
+    return e;
+  }
+
   Edge_t replace(Edge_t orig, Edge_t next) {
     assert(edges_.count(orig));
 
-    // replace vertices edges with next
-    orig->u_->edges_.erase(orig);
+    // insert new edge into vertices 
     orig->u_->edges_.insert(next);
-    orig->v_->edges_.erase(orig);
     orig->v_->edges_.insert(next);
 
     // attach next to vertices
@@ -360,10 +413,7 @@ public:
     next->v_ = orig->v_;
 
     // delete original edge
-    auto it = std::find(edges_.begin(), edges_.end(), orig);
-    auto ret = *it;
-    edges_.erase(it);
-    return ret;
+    return erase(orig);
   }
 
   Vertex_t replace(Vertex_t orig, Vertex_t next) {

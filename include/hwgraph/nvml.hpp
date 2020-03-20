@@ -51,14 +51,13 @@ inline void add_gpus(hwgraph::Graph &graph) {
     // get the name of this device
     char name[64];
     NVML(nvmlDeviceGetName(dev, name, sizeof(name)));
-    
+
     // Get the PCI address of this device
     nvmlPciInfo_t pciInfo;
     NVML(nvmlDeviceGetPciInfo(dev, &pciInfo));
     PciAddress addr = {pciInfo.domain, pciInfo.bus, pciInfo.device, 0};
     auto local = graph.get_pci(addr);
     assert(local);
-
 
     if (local) {
       std::cerr << "add_gpus(): replace\n";
@@ -68,7 +67,6 @@ inline void add_gpus(hwgraph::Graph &graph) {
       std::cerr << "add_gpus(): new\n";
       assert(0);
     }
-
   }
 }
 // https://github.com/NVIDIA/nccl/blob/6c61492eba5c25ac6ed1bf57de23c6a689aa75cc/src/graph/topo.cc#L222
@@ -121,7 +119,7 @@ inline void add_nvlinks(hwgraph::Graph &graph) {
       std::cerr << "add_nvlinks(): remote " << addr.str() << "\n";
 
       unsigned int version;
-      NVML(nvmlDeviceGetNvLinkVersion (dev, l, &version));
+      NVML(nvmlDeviceGetNvLinkVersion(dev, l, &version));
 
       if (remote->type_ == Vertex::Type::Gpu) {
         std::cerr << "remote is " << remote->str() << "\n";
@@ -147,7 +145,45 @@ inline void add_nvlinks(hwgraph::Graph &graph) {
     }
   }
 
-  // join nvlinks together
+  /*
+  each NvLink connected component may have multiple nvlinks here.
+  We combine them into a single nvlink with a larger lane count
+  */
+
+  bool changed = true;
+  while (changed) {
+    changed = false;
+
+    /*
+    look through all edges for an nvlink
+    if we find one, look for another nvlink between the same verts
+    if we find one, combine them and start over
+    */
+    for (auto &i : graph.edges()) {
+      if (i->type_ == Edge::Type::Nvlink) {
+        for (auto &j : graph.edges()) {
+          if (i->same_vertices(j)) {
+
+            std::cerr << "add_nvlinks(): combining " << i->str() << " and " << j->str() << "\n"; 
+
+            assert(i->data_.nvlink.version == j->data_.nvlink.version);
+            i->data_.nvlink.lanes += j->data_.nvlink.lanes;
+            graph.erase(j); // invalidated iterators
+            changed = true;
+            goto loop_end;
+          }
+        }
+      }
+    }
+  loop_end:;
+  }
+
+  /*
+  NvLink lanes have been combined
+  GPU-CPU NvLinks are connected to an NvLinkBridge, which is connected to the hostbridge
+  we can treat these connections as infinite bandwidth when computing bandwidth, so this is fine for now
+  */
+
 
 }
 
