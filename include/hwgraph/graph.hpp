@@ -417,6 +417,10 @@ public:
         if (v->data_.gpu.pciDev.addr == address) {
           return v;
         }
+      } else if (v->type_ == Vertex::Type::NvLinkBridge) {
+        if (v->data_.nvLinkBridge.pciDev.addr == address) {
+          return v;
+        }
       }
     }
     return nullptr;
