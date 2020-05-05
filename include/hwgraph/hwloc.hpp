@@ -52,10 +52,10 @@ inline void add_packages(hwgraph::Graph &graph) {
         if (std::string("CPUModel") == obj->infos[j].name) {
           v->name_ = obj->infos[j].value;
           std::strncpy(v->data_.intel.model, obj->infos[j].value,
-                       Vertex::MAX_STR);
+                       hwgraph::MAX_STR);
         } else if (std::string("CPUVendor") == obj->infos[j].name) {
           std::strncpy(v->data_.intel.vendor, obj->infos[j].value,
-                       Vertex::MAX_STR);
+                       hwgraph::MAX_STR);
         } else if (std::string("CPUModelNumber") == obj->infos[j].name) {
           v->data_.intel.modelNumber = std::atoi(obj->infos[j].value);
         } else if (std::string("CPUFamilyNumber") == obj->infos[j].name) {
@@ -69,7 +69,7 @@ inline void add_packages(hwgraph::Graph &graph) {
         if (std::string("CPUModel") == obj->infos[j].name) {
           v->name_ = obj->infos[j].value;
           std::strncpy(v->data_.ppc_.model, obj->infos[j].value,
-                       Vertex::MAX_STR);
+                       MAX_STR);
         } else if (std::string("CPURevision") == obj->infos[j].name) {
           v->data_.ppc_.revision = std::atoi(obj->infos[j].value);
         }

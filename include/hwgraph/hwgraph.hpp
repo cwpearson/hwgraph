@@ -12,15 +12,14 @@ namespace hwgraph {
  */
 enum class DiscoveryMethod {
   None = 0,
-#if HWGRAPH_USE_NVML == 1
   Nvml = 1,
-#endif
   Hwloc = 2,
 };
 static_assert(sizeof(DiscoveryMethod) == sizeof(int), "int");
 
 inline DiscoveryMethod operator|(DiscoveryMethod a, DiscoveryMethod b) {
-  return static_cast<DiscoveryMethod>(static_cast<int>(a) | static_cast<int>(b));
+  return static_cast<DiscoveryMethod>(static_cast<int>(a) |
+                                      static_cast<int>(b));
 }
 
 inline DiscoveryMethod &operator|=(DiscoveryMethod &a, DiscoveryMethod b) {
@@ -29,31 +28,47 @@ inline DiscoveryMethod &operator|=(DiscoveryMethod &a, DiscoveryMethod b) {
 }
 
 inline DiscoveryMethod operator&(DiscoveryMethod a, DiscoveryMethod b) {
-  return static_cast<DiscoveryMethod>(static_cast<int>(a) & static_cast<int>(b));
+  return static_cast<DiscoveryMethod>(static_cast<int>(a) &
+                                      static_cast<int>(b));
 }
 
 inline bool operator&&(DiscoveryMethod a, DiscoveryMethod b) {
   return (a & b) != DiscoveryMethod::None;
 }
 
-Graph make_graph(const DiscoveryMethod &method) {
-    Graph g;
+/* Return available methods (to be passed to make_graph)
+*/
+DiscoveryMethod available_methods() {
+  DiscoveryMethod ret = DiscoveryMethod::None;
+#if HWGRAPH_USE_NVML == 1
+  ret |= DiscoveryMethod::Nvml;
+#endif
+#if HWGRAPH_USE_HWLOC == 1
+  ret |= DiscoveryMethod::Hwloc;
+#endif
+  return ret;
+}
 
-    if (method && DiscoveryMethod::Hwloc) {
-        hwloc::add_packages(g);
-    }
-    if (method && DiscoveryMethod::Hwloc) {
-        hwloc::add_pci(g);
-    }
+/* Use the provided methods to build a hardware graph
+*/
+Graph make_graph(const DiscoveryMethod &method) {
+  Graph g;
+
+  if (method && DiscoveryMethod::Hwloc) {
+    hwloc::add_packages(g);
+  }
+  if (method && DiscoveryMethod::Hwloc) {
+    hwloc::add_pci(g);
+  }
 
 #if HWGRAPH_USE_NVML == 1
-    if (method && DiscoveryMethod::Nvml) {
-        nvml::add_gpus(g);
-        nvml::add_nvlinks(g);
-    }
+  if (method && DiscoveryMethod::Nvml) {
+    nvml::add_gpus(g);
+    nvml::add_nvlinks(g);
+  }
 #endif
 
-    return g;
+  return g;
 }
 
-}
+} // namespace hwgraph

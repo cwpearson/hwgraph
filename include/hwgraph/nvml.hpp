@@ -6,6 +6,7 @@
 #include <nvml.h>
 
 #include "graph.hpp"
+#include "narrow.hpp"
 
 namespace hwgraph {
 namespace nvml {
@@ -45,27 +46,51 @@ inline void add_gpus(hwgraph::Graph &graph) {
     nvmlDevice_t dev;
     NVML(nvmlDeviceGetHandleByIndex(devIdx, &dev));
 
-    int cudaMajor, cudaMinor;
-    NVML(nvmlDeviceGetCudaComputeCapability(dev, &cudaMajor, &cudaMinor));
-
-    // get the name of this device
-    char name[64];
-    NVML(nvmlDeviceGetName(dev, name, sizeof(name)));
-
     // Get the PCI address of this device
+    std::cerr << "Get PCI Info for device " << devIdx << "\n";
     nvmlPciInfo_t pciInfo;
     NVML(nvmlDeviceGetPciInfo(dev, &pciInfo));
-    PciAddress addr = {pciInfo.domain, pciInfo.bus, pciInfo.device, 0};
+    PciAddress addr = {safe_narrow<short unsigned int>(pciInfo.domain),
+                       safe_narrow<unsigned char>(pciInfo.bus),
+                       safe_narrow<unsigned char>(pciInfo.device), 0};
     auto local = graph.get_pci(addr);
-    assert(local);
+
+    std::cerr << "matching device in graph: " << devIdx << "\n";
+    std::cerr << local->str() << "\n";
+
+    // get the name of this device
+    std::cerr << "Get name for device " << devIdx << "\n";
+    char name[64]; // nvml says 64 is the max size
+    NVML(nvmlDeviceGetName(dev, name, sizeof(name)));
+
+    std::cerr << "make new GPU\n";
+    Vertex_t gpu = Vertex::new_gpu(name);
+    std::cerr << gpu->str() << "\n";
+
+    std::cerr << "take pci info\n";
+    // update it with existing PCI info, if found
+    if (local) {
+      if (local->type_ == Vertex::Type::PciDev) {
+        gpu->data_.gpu.pciDev = local->data_.pciDev;
+      } else {
+        assert(0);
+      }
+    }
+
+    std::cerr << "get CUDA CC\n";
+    int cudaMajor, cudaMinor;
+    NVML(nvmlDeviceGetCudaComputeCapability(dev, &cudaMajor, &cudaMinor));
+    gpu->data_.gpu.ccMajor = cudaMajor;
+    gpu->data_.gpu.ccMinor = cudaMinor;
 
     if (local) {
       std::cerr << "add_gpus(): replace\n";
-      auto gpu = Vertex::new_gpu(name, local->data_.pciDev);
+
       graph.replace(local, gpu);
+
     } else {
       std::cerr << "add_gpus(): new\n";
-      assert(0);
+      graph.insert_vertex(gpu);
     }
   }
 }
@@ -106,27 +131,31 @@ inline void add_nvlinks(hwgraph::Graph &graph) {
       // Get the PCI address of this device
       nvmlPciInfo_t pciInfo;
       NVML(nvmlDeviceGetPciInfo(dev, &pciInfo));
-      PciAddress addr = {pciInfo.domain, pciInfo.bus, pciInfo.device, 0};
+      PciAddress addr = {safe_narrow<short unsigned int>(pciInfo.domain),
+                         safe_narrow<unsigned char>(pciInfo.bus),
+                         safe_narrow<unsigned char>(pciInfo.device), 0};
       std::cerr << "add_nvlinks(): local " << addr.str() << "\n";
       auto local = graph.get_pci(addr);
       assert(local->type_ == Vertex::Type::Gpu);
 
       // figure out what's on the other side
       NVML(nvmlDeviceGetNvLinkRemotePciInfo(dev, l, &pciInfo));
-      addr = {pciInfo.domain, pciInfo.bus, pciInfo.device, 0};
+      addr = {safe_narrow<short unsigned int>(pciInfo.domain),
+              safe_narrow<unsigned char>(pciInfo.bus),
+              safe_narrow<unsigned char>(pciInfo.device), 0};
       auto remote = graph.get_pci(addr);
 
-
-      /* the NvLink Bridges on the CPUs are emulated PCI device that we did not add during PCI discovery
-      just directly connect to whatever CPU is closest.
+      /* the NvLink Bridges on the CPUs are emulated PCI device that we did not
+      add during PCI discovery just directly connect to whatever CPU is closest.
       */
       if (!remote) {
-	std::cerr << "searching for closest package\n";
+        std::cerr << "searching for closest package\n";
         auto p = graph.shortest_path(local, Vertex::is_package);
         remote = p.second;
       }
 
-      if (!remote) std::cerr << "add_nvlinks(): couldn't connect nvlink to anything\n";
+      if (!remote)
+        std::cerr << "add_nvlinks(): couldn't connect nvlink to anything\n";
 
       unsigned int version;
       NVML(nvmlDeviceGetNvLinkVersion(dev, l, &version));
@@ -173,10 +202,11 @@ inline void add_nvlinks(hwgraph::Graph &graph) {
       if (i->type_ == Edge::Type::Nvlink) {
         for (auto &j : graph.edges()) {
           if (i != j && i->same_vertices(j)) {
-            std::cerr << "add_nvlinks(): combining " << i->str() << " and " << j->str() << "\n"; 
+            std::cerr << "add_nvlinks(): combining " << i->str() << " and "
+                      << j->str() << "\n";
             assert(i->data_.nvlink.version == j->data_.nvlink.version);
             i->data_.nvlink.lanes += j->data_.nvlink.lanes;
-            std::cerr << "add_nvlinks(): into " << i->str() << "\n"; 
+            std::cerr << "add_nvlinks(): into " << i->str() << "\n";
             graph.erase(j); // invalidated iterators
             changed = true;
             goto loop_end;
@@ -189,11 +219,10 @@ inline void add_nvlinks(hwgraph::Graph &graph) {
 
   /*
   NvLink lanes have been combined
-  GPU-CPU NvLinks are connected to an NvLinkBridge, which is connected to the hostbridge
-  we can treat these connections as infinite bandwidth when computing bandwidth, so this is fine for now
+  GPU-CPU NvLinks are connected to an NvLinkBridge, which is connected to the
+  hostbridge we can treat these connections as infinite bandwidth when computing
+  bandwidth, so this is fine for now
   */
-
-
 }
 
 } // namespace nvml

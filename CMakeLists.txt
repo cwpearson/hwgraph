@@ -65,6 +65,8 @@ target_include_directories(hwgraph INTERFACE
   $<INSTALL_INTERFACE:include>
 )
 
+add_subdirectory(src)
+
 # "this command should be in the source directory root for CTest to find the test file"
 enable_testing() 
 add_subdirectory(test)

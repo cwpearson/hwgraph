@@ -1,7 +1,10 @@
 #pragma once
 
+#include <algorithm>
+#include <cassert>
 #include <cstring>
 #include <deque>
+#include <functional>
 #include <iomanip>
 #include <iostream>
 #include <memory>
@@ -9,6 +12,7 @@
 #include <sstream>
 #include <vector>
 
+#include "config.hpp"
 #include "dot_label.hpp"
 #include "pci_address.hpp"
 #include "vertex_data.hpp"
@@ -22,8 +26,6 @@ struct Vertex;
 typedef std::shared_ptr<Vertex> Vertex_t;
 
 struct Vertex {
-
-  static constexpr size_t MAX_STR = 64;
 
   enum class Type {
     Unknown,
@@ -41,19 +43,8 @@ struct Vertex {
   std::string name_;
 
   union Data {
-    struct PpcData {
-      unsigned idx; // hwloc index
-      char model[MAX_STR];
-      int revision;
-    } ppc_;
-    struct IntelData {
-      unsigned idx; // hwloc index
-      char model[MAX_STR];
-      char vendor[MAX_STR];
-      int modelNumber;
-      int familyNumber;
-      int stepping;
-    } intel;
+    PpcData ppc_;
+    IntelData intel;
     struct BridgeData {
       PciAddress addr;
       PciAddress domain;
@@ -66,7 +57,7 @@ struct Vertex {
     NvSwitchData nvSwitch;
   } data_;
 
-  Vertex(Type type) : type_(type) { std::memset(&data_, 0, sizeof(data_)); }
+  Vertex(Type type) : type_(type), data_({}) {}
   Vertex() : Vertex(Type::Unknown) {}
 
   static Vertex_t new_bridge(const char *name, const PciAddress &addr,
@@ -99,13 +90,18 @@ struct Vertex {
     return v;
   }
 
-  static Vertex_t new_gpu(const char *name, const PciDeviceData &pciDev) {
-    auto v = std::make_shared<Vertex>(Vertex::Type::Gpu);
+  static Vertex_t new_gpu(const char *name) {
+    Vertex_t v = std::make_shared<Vertex>(Vertex::Type::Gpu);
     if (name) {
       v->name_ = name;
     } else {
       v->name_ = "anonymous gpu";
     }
+    return v;
+  }
+
+  static Vertex_t new_gpu(const char *name, const PciDeviceData &pciDev) {
+    auto v = new_gpu(name);
     v->data_.gpu.pciDev = pciDev;
     return v;
   }
@@ -132,6 +128,8 @@ struct Vertex {
     return v->type_ == Type::Ppc || v->type_ == Type::Intel;
   }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wswitch-enum"
   std::string str() const {
     std::string s = "{";
     s += "name: " + name_;
@@ -151,12 +149,22 @@ struct Vertex {
       break;
     case Type::Gpu:
       s += ", type: gpu, ";
-      s += "pcidev: " + data_.gpu.pciDev.str();
+      s += "gpu: " + data_.gpu.str();
       break;
     case Type::NvLinkBridge:
       s += ", type: nvlinkbridge, ";
       s += "pcidev: " + data_.pciDev.str();
       break;
+    case Type::Intel: {
+      s += ", type: intel";
+      s += data_.intel.str();
+      break;
+    }
+    case Type::Ppc: {
+      s += ", type: ppc";
+      s += data_.ppc_.str();
+      break;
+    }
     case Type::Unknown: {
       s += ", type: unknown";
       break;
@@ -165,6 +173,7 @@ struct Vertex {
       s += ", type: <unhandled in Vertex::str()>";
       break;
     }
+#pragma GCC diagnostic pop
 
     s += "}";
     return s;
@@ -173,12 +182,15 @@ struct Vertex {
   std::string dot_id() const { return std::to_string(uintptr_t(this)); }
 
   std::string dot_label() const {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wswitch-enum"
     switch (type_) {
     case Type::NvLinkBridge:
       return DotLabel("NvLink Bridge").str();
     default:
       return DotLabel(name_).str();
     }
+#pragma GCC diagnostic pop
   }
 
   std::string dot_shape() const { return "record"; }
@@ -284,6 +296,8 @@ struct Edge {
   }
 
   int64_t bandwidth() {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wswitch-enum"
     switch (type_) {
     case Type::Qpi:
       return data_.qpi_.links_ * data_.qpi_.speed_;
@@ -298,11 +312,14 @@ struct Edge {
       assert(0 && "unhandled edge Type");
       return -1;
     }
+#pragma GCC diagnostic pop
   }
 
   std::string str() const {
     std::string s = "{";
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wswitch-enum"
     switch (type_) {
     case Type::Nvlink: {
       s += "type: nvlink, ";
@@ -310,10 +327,15 @@ struct Edge {
       s += "version: " + std::to_string(data_.nvlink.version);
       break;
     }
+    case Type::Unknown: {
+      s += "type: unknown";
+      break;
+    }
     default:
       s += "type: <unhandled in Edge::str()>";
       break;
     }
+#pragma GCC diagnostic pop
 
     s += "}";
     return s;
@@ -322,6 +344,8 @@ struct Edge {
   std::string dot_rank() const { return ""; }
 
   std::string dot_label() const {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wswitch-enum"
     switch (type_) {
     case Type::Nvlink:
       return DotLabel("nvlink")
@@ -334,11 +358,13 @@ struct Edge {
           .str();
     case Type::Xbus:
       return DotLabel("xbus").str();
+    case Type::Unknown:
+      return DotLabel("unknown").str();
     default:
-      return "edge";
+      return DotLabel("edge").str();
     }
-
-    return "edge";
+#pragma GCC diagnostic pop
+    assert(false);
   }
 
   std::string dot_attrs() const {
@@ -477,7 +503,7 @@ public:
     // attach next to vertices
     next->u_ = orig->u_;
     next->v_ = orig->v_;
-    
+
     // delete original edge
     auto ret = erase(orig);
     assert(0 == edges_.count(orig));
@@ -485,9 +511,15 @@ public:
   }
 
   Vertex_t replace(Vertex_t orig, Vertex_t next) {
+    std::cerr << "entry\n";
+    std::cerr << orig->str() << "\n";
+    std::cerr << next->str() << "\n";
+    assert(orig);
+    assert(next);
     assert(vertices_.count(orig));
 
     // replace all edges with orig to be next
+    std::cerr << "replace edges\n";
     for (auto &e : orig->edges_) {
       if (e->u_ == orig) {
         e->u_ = next;
@@ -498,17 +530,28 @@ public:
     }
 
     // copy all orig edges to next
+    std::cerr << "copy edges\n";
     next->edges_ = orig->edges_;
 
     // add new vertex
     vertices_.insert(next);
 
-
     // delete original vertex
     auto it = std::find(vertices_.begin(), vertices_.end(), orig);
+    assert(it != vertices_.end());
     auto ret = *it;
     vertices_.erase(it);
 
+    return ret;
+  }
+
+  std::set<Vertex_t> get_vertices(std::function<bool(Vertex_t)> pred) {
+    std::set<Vertex_t> ret;
+    for (auto &v : vertices_) {
+      if (pred(v)) {
+        ret.insert(v);
+      }
+    }
     return ret;
   }
 
@@ -563,20 +606,23 @@ public:
     return nullptr;
   }
 
-
-template <typename T>
-void dump(const std::vector<T> v) {
-  for (auto &e : v) {
-    std::cerr << e->str() << " ";
+  template <typename T> void dump(const std::vector<T> v) {
+    for (auto &e : v) {
+      std::cerr << e->str() << " ";
+    }
+    std::cerr << "\n";
   }
-  std::cerr << "\n";
-}
 
-/*
-  finds the shortest path from src to a vertex for which UnaryPredicate(vertex) yields true
-*/
-template <typename UnaryPredicate>
-std::pair<Path, Vertex_t> shortest_path(const Vertex_t src, UnaryPredicate p) {
+  // dont care if c++17 mangled name changes
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnoexcept-type"
+  /*
+    finds the shortest path from src to a vertex for which
+    UnaryPredicate(vertex) yields true
+  */
+  template <typename UnaryPredicate>
+  std::pair<Path, Vertex_t> shortest_path(const Vertex_t src,
+                                          UnaryPredicate p) {
 
     std::set<Edge_t> visited; // the edges we have traversed
     std::deque<Path> worklist;
@@ -586,7 +632,7 @@ std::pair<Path, Vertex_t> shortest_path(const Vertex_t src, UnaryPredicate p) {
       Path path = {e};
       worklist.push_front(path);
       visited.insert(e);
-    } 
+    }
 
     while (!worklist.empty()) {
 
@@ -622,6 +668,7 @@ std::pair<Path, Vertex_t> shortest_path(const Vertex_t src, UnaryPredicate p) {
 
     return std::make_pair(Path(), nullptr);
   }
+#pragma GCC diagnostic pop
 
   /*
   return all paths from src to dst

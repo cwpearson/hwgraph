@@ -1,14 +1,15 @@
 #pragma once
 
-#include <sstream>
 #include <iomanip>
+#include <sstream>
 
+#include "config.hpp"
 #include "pci_address.hpp"
 
 inline std::string hex_str(unsigned short u) {
-    std::stringstream ss;
-    ss << "0x" << std::hex << u;
-    return ss.str();
+  std::stringstream ss;
+  ss << "0x" << std::hex << u;
+  return ss.str();
 }
 
 struct PciDeviceData {
@@ -22,22 +23,32 @@ struct PciDeviceData {
   float linkSpeed;
 
   std::string str() const {
-      std::string s = "{";
-      s += "addr: " + addr.str() + ", ";
-      s += "classId: " + hex_str(classId) + ", ";
-      s += "vendorId: " + hex_str(vendorId) + ", ";
-      s += "deviceId: " + hex_str(deviceId) + ", ";
-      s += "subvendorId: " + hex_str(subvendorId) + ", ";
-      s += "subdeviceId: " + hex_str(subdeviceId) + ", ";
-      s += "revision: " + hex_str(revision) + ", ";
-      s += "linkSpeed: " + std::to_string(linkSpeed);
-      s += "}";
-      return s;
+    std::string s = "{";
+    s += "addr: " + addr.str() + ", ";
+    s += "classId: " + hex_str(classId) + ", ";
+    s += "vendorId: " + hex_str(vendorId) + ", ";
+    s += "deviceId: " + hex_str(deviceId) + ", ";
+    s += "subvendorId: " + hex_str(subvendorId) + ", ";
+    s += "subdeviceId: " + hex_str(subdeviceId) + ", ";
+    s += "revision: " + hex_str(revision) + ", ";
+    s += "linkSpeed: " + std::to_string(linkSpeed);
+    s += "}";
+    return s;
   }
 };
 
 struct GpuData {
   PciDeviceData pciDev;
+  int ccMajor; // CUDA compute capability major
+  int ccMinor; // CUDA compute capability minor
+
+  std::string str() const {
+    std::string s = "{";
+    s += "pci_dev: " + pciDev.str() + ", ";
+    s += "cc: " + std::to_string(ccMajor) + "." + std::to_string(ccMinor);
+    s += "}";
+    return s;
+  }
 };
 
 struct NvLinkBridgeData {
@@ -46,4 +57,40 @@ struct NvLinkBridgeData {
 
 struct NvSwitchData {
   PciDeviceData pciDev;
+};
+
+struct IntelData {
+  unsigned idx; // hwloc index
+  char model[hwgraph::MAX_STR];
+  char vendor[hwgraph::MAX_STR];
+  int modelNumber;
+  int familyNumber;
+  int stepping;
+
+  std::string str() const {
+    std::string s = "{";
+    s += "idx: " + std::to_string(idx) + ", ";
+    s += "model: " + std::string(model) + ", ";
+    s += "vendor: " + std::string(vendor) + ", ";
+    s += "modelNumber: " + std::to_string(modelNumber) + ", ";
+    s += "familyNumber: " + std::to_string(familyNumber) + ", ";
+    s += "stepping: " + std::to_string(stepping);
+    s += "}";
+    return s;
+  }
+};
+
+struct PpcData {
+  unsigned idx; // hwloc index
+  char model[hwgraph::MAX_STR];
+  int revision;
+
+  std::string str() const {
+    std::string s = "{";
+    s += "idx: " + std::to_string(idx) + ", ";
+    s += "model: " + std::string(model) + ", ";
+    s += "revision: " + std::to_string(revision);
+    s += "}";
+    return s;
+  }
 };

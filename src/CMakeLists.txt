@@ -27,13 +27,9 @@ target_compile_options(
 )
 endmacro()
 
-add_executable(test_all test_main.cpp
-  test_hwgraph.cpp
-  test_graph.cpp
-)
+add_executable(print-system print_system.cpp)
 
-add_args(test_all)
-target_include_directories(test_all SYSTEM PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty)
-target_link_libraries(test_all hwgraph)
-add_test(NAME test_all COMMAND ./test_all -a)
+add_args(print-system)
+target_link_libraries(print-system hwgraph)
+
 
