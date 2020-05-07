@@ -59,8 +59,8 @@ TEST_CASE("graph", "") {
 
     g.join(src, dst, e);
 
-    std::vector<Graph::Path> paths;
-    Graph::Path path;
+    std::vector<Path> paths;
+    Path path;
 
     // forward path
     paths = g.paths(src, dst);
@@ -93,8 +93,8 @@ TEST_CASE("graph", "") {
     REQUIRE(2 == src->edges_.size());
     REQUIRE(2 == dst->edges_.size());
 
-    std::vector<Graph::Path> paths;
-    Graph::Path path;
+    std::vector<Path> paths;
+    Path path;
 
     // forward paths
     paths = g.paths(src, dst);
@@ -117,8 +117,8 @@ TEST_CASE("graph", "") {
     g.join(a, c, eac);
     g.join(b, c, ebc);
 
-    std::vector<Graph::Path> paths;
-    Graph::Path path;
+    std::vector<Path> paths;
+    Path path;
 
     paths = g.paths(a, b);
     REQUIRE(2 == paths.size());

@@ -68,8 +68,7 @@ inline void add_packages(hwgraph::Graph &graph) {
 #ifdef __PPC__
         if (std::string("CPUModel") == obj->infos[j].name) {
           v->name_ = obj->infos[j].value;
-          std::strncpy(v->data_.ppc_.model, obj->infos[j].value,
-                       MAX_STR);
+          std::strncpy(v->data_.ppc_.model, obj->infos[j].value, MAX_STR);
         } else if (std::string("CPURevision") == obj->infos[j].name) {
           v->data_.ppc_.revision = std::atoi(obj->infos[j].value);
         }
@@ -190,8 +189,8 @@ inline void visit_pci_device(hwgraph::Graph &graph, const hwloc_obj_t obj) {
   if (newDevice->data_.pciDev.vendorId == 0x1014 &&
       newDevice->data_.pciDev.deviceId == 0x4ea) {
     newDevice = nullptr;
-  } 
-  
+  }
+
   // add device
   if (newDevice) {
     std::cerr << "visit_pci_device(): Add " << newDevice->str() << "\n";
@@ -200,17 +199,16 @@ inline void visit_pci_device(hwgraph::Graph &graph, const hwloc_obj_t obj) {
     const auto parent = obj->parent;
     assert(parent);
     assert(0 == hwloc_compare_types(parent->type, HWLOC_OBJ_BRIDGE) &&
-         "Pci parent should be a bridge");
+           "Pci parent should be a bridge");
 
     const auto &parentBridge = graph.get_bridge_for_address(objAddress);
-    std::cerr << "visit_pci_device(): Parent is " << parentBridge->str() << "\n";
+    std::cerr << "visit_pci_device(): Parent is " << parentBridge->str()
+              << "\n";
     auto link = Edge::new_pci(pci.linkspeed);
 
     graph.join(parentBridge, newDevice, link);
   } else {
-
   }
-
 }
 
 inline void descend_pci_tree(hwloc_topology_t topology, hwgraph::Graph &graph,
@@ -246,7 +244,7 @@ inline void descend_pci_tree(hwloc_topology_t topology, hwgraph::Graph &graph,
     auto nonIoAncestor = hwloc_get_non_io_ancestor_obj(topology, obj);
     assert(nonIoAncestor);
 
-    // find the upstream packages that occuy the same numa nodes
+    // find the upstream packages that occupy the same numa nodes
     const int numPackages =
         hwloc_get_nbobjs_by_type(topology, HWLOC_OBJ_PACKAGE);
     assert(numPackages);
@@ -267,6 +265,18 @@ inline void descend_pci_tree(hwloc_topology_t topology, hwgraph::Graph &graph,
                   << " @ " << up_pci.linkspeed << "\n";
 
         auto link = Edge::new_pci(up_pci.linkspeed);
+
+        if (upstreamCompute->type_ == Vertex::Type::Intel) {
+          // i7-5820k
+          if (upstreamCompute->data_.intel.familyNumber == 6 &&
+              upstreamCompute->data_.intel.modelNumber == 63) {
+            link->data_.pci.lanes = 28;
+            if (link->data_.pci.linkSpeed == 0) {
+              link->data_.pci.linkSpeed = 16;
+            }
+          }
+        }
+
         graph.join(upstreamCompute, hub, link);
         break;
       }

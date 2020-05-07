@@ -31,7 +31,7 @@ struct Vertex {
     Unknown,
     Ppc,
     Intel,
-    Bridge, // PCI host bridge
+    Bridge, // PCI Bridge
     PciDev,
     Gpu,
     NvLinkBridge,
@@ -235,6 +235,7 @@ struct Edge {
     } xbus_;
     struct PciData {
       float linkSpeed;
+      int64_t lanes;
     } pci;
     struct NvlinkData {
       unsigned int version;
@@ -250,6 +251,7 @@ struct Edge {
   static Edge_t new_pci(float linkSpeed) {
     auto e = std::make_shared<Edge>(Edge::Type::Pci);
     e->data_.pci.linkSpeed = linkSpeed;
+    e->data_.pci.lanes = 0;
     return e;
   }
 
@@ -327,6 +329,11 @@ struct Edge {
       s += "version: " + std::to_string(data_.nvlink.version);
       break;
     }
+    case Type::Pci: {
+      s += "type: pci, ";
+      s += "linkSpeed: " + std::to_string(data_.pci.linkSpeed);
+      break;
+    }
     case Type::Unknown: {
       s += "type: unknown";
       break;
@@ -395,10 +402,25 @@ struct VertexEq {
   }
 };
 
+
+typedef std::vector<Edge_t> Path;
+
+inline double path_bandwidth(const Path &p) {
+  if (p.empty()) {
+    return -1;
+  } else {
+    auto cmp_bandwidth = [](const Edge_t &a, const Edge_t &b) {
+      return a->bandwidth() < b->bandwidth();
+    };
+    auto it = std::min_element(p.begin(), p.end(), cmp_bandwidth);
+    assert(it != p.end());
+    return (*it)->bandwidth();
+  }
+}
+
 class Graph {
 
 public:
-  typedef std::vector<Edge_t> Path;
 
   /*! Build a new graph
    */
@@ -728,6 +750,36 @@ public:
     }
 
     return ret;
+  }
+
+  // return the path from src to dst that has the minimum cost.
+  // if no path is found, return an empty path
+  Path min_path(const Vertex_t src, const Vertex_t dst, std::function<float(const Path &)> cost) {
+    std::vector<Path> allPaths = paths(src, dst);
+    if (allPaths.empty()) {
+      return Path();
+    }
+    auto path_cmp = [&](const Path &a, const Path &b) {
+      return cost(a) < cost(b);
+    };
+    auto it = std::min_element(allPaths.begin(), allPaths.end(), path_cmp);
+    assert(it != allPaths.end());
+    return *it;
+  }
+
+  // return the path from src to dst that has the max cost.
+  // if no path is found, return an empty path
+  Path max_path(const Vertex_t src, const Vertex_t dst, std::function<float(const Path &)> cost) {
+    std::vector<Path> allPaths = paths(src, dst);
+    if (allPaths.empty()) {
+      return Path();
+    }
+    auto path_cmp = [&](const Path &a, const Path &b) {
+      return cost(a) < cost(b);
+    };
+    auto it = std::max_element(allPaths.begin(), allPaths.end(), path_cmp);
+    assert(it != allPaths.end());
+    return *it;
   }
 
   std::string dot_str() const {

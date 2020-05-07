@@ -31,5 +31,6 @@ add_executable(print-system print_system.cpp)
 
 add_args(print-system)
 target_link_libraries(print-system hwgraph)
+target_include_directories(print-system PRIVATE ../thirdparty)
 
 

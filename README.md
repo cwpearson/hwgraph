@@ -2,6 +2,7 @@
 
 [![Build Status](https://travis-ci.com/cwpearson/hwgraph.svg?branch=master)](https://travis-ci.com/cwpearson/hwgraph)
 
+`dot -Tpdf filename.dot -o filename.pdf`
 
 ## Resources
 
