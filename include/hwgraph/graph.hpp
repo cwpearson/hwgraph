@@ -10,10 +10,12 @@
 #include <memory>
 #include <set>
 #include <sstream>
+#include <variant>
 #include <vector>
 
 #include "config.hpp"
 #include "dot_label.hpp"
+#include "edge_data.hpp"
 #include "pci_address.hpp"
 #include "vertex_data.hpp"
 
@@ -27,66 +29,66 @@ typedef std::shared_ptr<Vertex> Vertex_t;
 
 struct Vertex {
 
-  enum class Type {
-    Unknown,
-    Ppc,
-    Intel,
-    Bridge, // PCI Bridge
-    PciDev,
-    Gpu,
-    NvLinkBridge,
-    NvSwitch,
-  } type_;
+  // enum should match index in Data, so that data.index corresponds to this
+  // type
+  enum Type {
+    Unknown = 0,
+    Bridge = 1, // PCI Bridge
+    Gpu = 2,
+    Intel = 3,
+    NvLinkBridge = 4,
+    NvSwitch = 5,
+    PciDev = 6,
+    Ppc = 7,
+  };
+
+  typedef std::variant<UnknownData, BridgeData, GpuData, IntelData,
+                       NvLinkBridgeData, NvSwitchData, PciDeviceData, PpcData>
+      Data;
 
   std::set<Edge_t> edges_;
 
   std::string name_;
 
-  union Data {
-    PpcData ppc_;
-    IntelData intel;
-    struct BridgeData {
-      PciAddress addr;
-      PciAddress domain;
-      PciAddress secondaryBus;
-      PciAddress subordinateBus;
-    } bridge_;
-    PciDeviceData pciDev;
-    GpuData gpu;
-    NvLinkBridgeData nvLinkBridge;
-    NvSwitchData nvSwitch;
-  } data_;
+  Data data;
 
-  Vertex(Type type) : type_(type), data_({}) {}
-  Vertex() : Vertex(Type::Unknown) {}
+  Vertex() {}
 
   static Vertex_t new_bridge(const char *name, const PciAddress &addr,
                              unsigned short dnDom, unsigned char dnSecBus,
                              unsigned char dnSubBus) {
-    auto v = std::make_shared<Vertex>(Vertex::Type::Bridge);
+    auto v = std::make_shared<Vertex>();
+
     if (name) {
       v->name_ = name;
     } else {
       v->name_ = "anonymous bridge";
     }
 
-    v->data_.bridge_.addr = addr;
-    v->data_.bridge_.domain = {dnDom, 0, 0, 0};
-    v->data_.bridge_.secondaryBus = {0, dnSecBus, 0, 0};
-    v->data_.bridge_.subordinateBus = {0, dnSubBus, 0, 0};
+    BridgeData data;
+    data.addr = addr;
+    data.domain = {dnDom, 0, 0, 0};
+    data.secondaryBus = {0, dnSecBus, 0, 0};
+    data.subordinateBus = {0, dnSubBus, 0, 0};
+
+    v->data = data;
     return v;
   }
 
   static Vertex_t new_pci_device(const char *name, const PciAddress &addr,
                                  float linkSpeed) {
     auto v = std::make_shared<Vertex>(Vertex::Type::PciDev);
+
     if (name) {
       v->name_ = name;
     } else {
       v->name_ = "anonymous pcidev";
     }
-    v->data_.pciDev.addr = addr;
-    v->data_.pciDev.linkSpeed = linkSpeed;
+    PciDeviceData data;
+    data.addr = addr;
+    data.linkSpeed = linkSpeed;
+
+    v->data = data;
     return v;
   }
 
@@ -102,7 +104,11 @@ struct Vertex {
 
   static Vertex_t new_gpu(const char *name, const PciDeviceData &pciDev) {
     auto v = new_gpu(name);
-    v->data_.gpu.pciDev = pciDev;
+
+    GpuData data;
+
+    data.pciDev = pciDev;
+    v->data = data;
     return v;
   }
 
@@ -114,66 +120,58 @@ struct Vertex {
     } else {
       v->name_ = "anonymous nvlink bridge";
     }
-    v->data_.nvLinkBridge.pciDev = pciDev;
+
+    NvLinkBridgeData data;
+    data.pciDev = pciDev;
+    v->data = data;
     return v;
   }
 
-  bool is_pci_device() const noexcept {
-    return type_ == Type::PciDev || type_ == Type::Gpu ||
-           type_ == Type::NvLinkBridge || type_ == Type::NvSwitch;
-  }
-
-  static bool is_package(const Vertex_t v) noexcept {
+  static bool is_pci_device(Vertex_t v) noexcept {
     assert(v);
-    return v->type_ == Type::Ppc || v->type_ == Type::Intel;
+    return std::holds_alternative<PciDeviceData>(v->data) ||
+           std::holds_alternative<GpuData>(v->data) ||
+           std::holds_alternative<NvLinkBridgeData>(v->data) ||
+           std::holds_alternative<NvSwitchData>(v->data);
   }
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wswitch-enum"
+  static bool is_package(Vertex_t v) noexcept {
+    assert(v);
+    return std::holds_alternative<PpcData>(v->data) ||
+           std::holds_alternative<IntelData>(v->data);
+  }
+
   std::string str() const {
     std::string s = "{";
     s += "name: " + name_;
 
-    switch (type_) {
-    case Type::Bridge: {
+    if (auto p = std::get_if<BridgeData>(&data)) {
       s += ", type: bridge, ";
-      s += "addr=" + data_.bridge_.addr.str();
-      s += ",dom=" + data_.bridge_.domain.str();
-      s += ",sec=" + data_.bridge_.secondaryBus.str();
-      s += ",sub=" + data_.bridge_.subordinateBus.str();
-      break;
-    }
-    case Type::PciDev:
+      s += "addr=" + p->addr.str();
+      s += ",dom=" + p->domain.str();
+      s += ",sec=" + p->secondaryBus.str();
+      s += ",sub=" + p->subordinateBus.str();
+    } else if (auto p = std::get_if<PciDeviceData>(&data)) {
       s += ", type: pcidev, ";
-      s += "pcidev: " + data_.pciDev.str();
-      break;
-    case Type::Gpu:
+      s += "pcidev: " + p->str();
+    } else if (auto p = std::get_if<GpuData>(&data)) {
       s += ", type: gpu, ";
-      s += "gpu: " + data_.gpu.str();
-      break;
-    case Type::NvLinkBridge:
+      s += "gpu: " + p->str();
+    } else if (auto p = std::get_if<NvLinkBridgeData>(&data)) {
       s += ", type: nvlinkbridge, ";
-      s += "pcidev: " + data_.pciDev.str();
-      break;
-    case Type::Intel: {
+      s += "pcidev: " + p->pciDev.str();
+    } else if (auto p = std::get_if<IntelData>(&data)) {
       s += ", type: intel";
-      s += data_.intel.str();
-      break;
-    }
-    case Type::Ppc: {
+      s += p->str();
+    } else if (auto p = std::get_if<PpcData>(&data)) {
       s += ", type: ppc";
-      s += data_.ppc_.str();
-      break;
-    }
-    case Type::Unknown: {
+      s += p->str();
+    } else if (auto p = std::get_if<UnknownData>(&data)) {
       s += ", type: unknown";
-      break;
-    }
-    default:
+    } else {
       s += ", type: <unhandled in Vertex::str()>";
-      break;
     }
-#pragma GCC diagnostic pop
+
 
     s += "}";
     return s;
@@ -182,15 +180,11 @@ struct Vertex {
   std::string dot_id() const { return std::to_string(uintptr_t(this)); }
 
   std::string dot_label() const {
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wswitch-enum"
-    switch (type_) {
-    case Type::NvLinkBridge:
+    if (auto p = std::get_if<NvLinkBridgeData>(&data)) {
       return DotLabel("NvLink Bridge").str();
-    default:
+    } else {
       return DotLabel(name_).str();
     }
-#pragma GCC diagnostic pop
   }
 
   std::string dot_shape() const { return "record"; }
@@ -215,56 +209,54 @@ struct Edge {
   static const int64_t QPI_GT = 1e9;
   static const int64_t XBUS_GIB = int64_t(1) << 30;
 
+  // should be the same order as the variant types so data.index() returns this
+  // value
   enum class Type {
-    Unknown,
-    Qpi,
-    Xbus,
-    Pci,
-    Nvlink,
-  } type_;
+    Unknown = 0,
+    Nvlink = 1,
+    Pci = 2,
+    Qpi = 3,
+    Xbus = 4,
+  };
+  typedef std::variant<UnknownData, NvlinkData, PciData, QpiData, XbusData>
+      Data;
 
   Vertex_t u_;
   Vertex_t v_;
-  union Data {
-    struct QpiData {
-      int64_t links_;
-      int64_t speed_;
-    } qpi_;
-    struct XbusData {
-      int64_t bw_;
-    } xbus_;
-    struct PciData {
-      float linkSpeed;
-      int64_t lanes;
-    } pci;
-    struct NvlinkData {
-      unsigned int version;
-      int64_t lanes;
-    } nvlink;
-  } data_;
 
-  Edge(Type type) : type_(type), u_(nullptr), v_(nullptr) {
-    std::memset(&data_, 0, sizeof(data_));
-  }
-  Edge() : Edge(Type::Unknown) {}
+  Data data;
+
+  Edge() {}
 
   static Edge_t new_pci(float linkSpeed) {
-    auto e = std::make_shared<Edge>(Edge::Type::Pci);
-    e->data_.pci.linkSpeed = linkSpeed;
-    e->data_.pci.lanes = 0;
+    auto e = std::make_shared<Edge>();
+    PciData data;
+    data.linkSpeed = linkSpeed;
+    data.lanes = 0;
+    e->data = data;
     return e;
   }
 
   static Edge_t new_nvlink(unsigned int version, int64_t lanes) {
-    auto e = std::make_shared<Edge>(Edge::Type::Nvlink);
-    e->data_.nvlink.version = version;
-    e->data_.nvlink.lanes = lanes;
+    auto e = std::make_shared<Edge>();
+    NvlinkData data;
+    data.version = version;
+    data.lanes = lanes;
+    e->data = data;
     return e;
   }
 
   static Edge_t new_xbus(int64_t bw) {
-    auto e = std::make_shared<Edge>(Edge::Type::Xbus);
-    e->data_.xbus_.bw_ = bw;
+    auto e = std::make_shared<Edge>();
+    XbusData data;
+    data.bw_ = bw;
+    e->data = data;
+    return e;
+  }
+
+  static Edge_t make_qpi(QpiData &data) {
+    auto e = std::make_shared<Edge>();
+    e->data = data;
     return e;
   }
 
@@ -272,8 +264,12 @@ struct Edge {
     return (u_ == v || v_ == v);
   }
 
+  /* retrieve the vertex on this edge that is not `v`
+   */
   Vertex_t other_vertex(const Vertex_t v) const noexcept {
-    if (u_ == v) {
+    if (u_ == v && v_ == v) {
+      assert(0 && "self-edge?");
+    } else if (u_ == v) {
       return v_;
     } else if (v_ == v) {
       return u_;
@@ -297,52 +293,40 @@ struct Edge {
     return false;
   }
 
-  int64_t bandwidth() {
 #pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wswitch-enum"
-    switch (type_) {
-    case Type::Qpi:
-      return data_.qpi_.links_ * data_.qpi_.speed_;
-    case Type::Xbus:
-      return data_.xbus_.bw_;
-    case Type::Pci:
-      return data_.pci.linkSpeed;
-    case Type::Unknown:
+#pragma GCC diagnostic ignored "-Wnoexcept-type"
+  int64_t bandwidth() {
+    if (auto p = std::get_if<QpiData>(&data)) {
+      return p->links_ * p->speed_;
+    } else if (auto p = std::get_if<XbusData>(&data)) {
+      return p->bw_;
+    } else if (auto p = std::get_if<PciData>(&data)) {
+      return p->linkSpeed;
+    } else if (auto p = std::get_if<UnknownData>(&data)) {
       assert(0 && "bandwidth() called on unknown edge");
       return -1;
-    default:
+    } else {
       assert(0 && "unhandled edge Type");
       return -1;
     }
-#pragma GCC diagnostic pop
   }
+#pragma GCC diagnostic pop
 
   std::string str() const {
     std::string s = "{";
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wswitch-enum"
-    switch (type_) {
-    case Type::Nvlink: {
+    if (auto p = std::get_if<NvlinkData>(&data)) {
       s += "type: nvlink, ";
-      s += "lanes: " + std::to_string(data_.nvlink.lanes) + ",";
-      s += "version: " + std::to_string(data_.nvlink.version);
-      break;
-    }
-    case Type::Pci: {
+      s += "lanes: " + std::to_string(p->lanes) + ",";
+      s += "version: " + std::to_string(p->version);
+    } else if (auto p = std::get_if<PciData>(&data)) {
       s += "type: pci, ";
-      s += "linkSpeed: " + std::to_string(data_.pci.linkSpeed);
-      break;
-    }
-    case Type::Unknown: {
+      s += "linkSpeed: " + std::to_string(p->linkSpeed);
+    } else if (auto p = std::get_if<UnknownData>(&data)) {
       s += "type: unknown";
-      break;
-    }
-    default:
+    } else {
       s += "type: <unhandled in Edge::str()>";
-      break;
     }
-#pragma GCC diagnostic pop
 
     s += "}";
     return s;
@@ -351,27 +335,22 @@ struct Edge {
   std::string dot_rank() const { return ""; }
 
   std::string dot_label() const {
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wswitch-enum"
-    switch (type_) {
-    case Type::Nvlink:
+    if (auto p = std::get_if<NvlinkData>(&data)) {
       return DotLabel("nvlink")
-          .with_field(std::to_string(data_.nvlink.lanes))
-          .with_field(std::to_string(data_.nvlink.version))
+          .with_field(std::to_string(p->lanes))
+          .with_field(std::to_string(p->version))
           .str();
-    case Type::Pci:
+    } else if (auto p = std::get_if<PciData>(&data)) {
       return DotLabel("pci")
-          .with_field(std::to_string(data_.pci.linkSpeed))
+          .with_field(std::to_string(p->linkSpeed))
           .str();
-    case Type::Xbus:
+    } else if (auto p = std::get_if<XbusData>(&data)) {
       return DotLabel("xbus").str();
-    case Type::Unknown:
+    } else if (auto p = std::get_if<UnknownData>(&data)) {
       return DotLabel("unknown").str();
-    default:
+    } else {
       return DotLabel("edge").str();
     }
-#pragma GCC diagnostic pop
-    assert(false);
   }
 
   std::string dot_attrs() const {
@@ -402,7 +381,6 @@ struct VertexEq {
   }
 };
 
-
 typedef std::vector<Edge_t> Path;
 
 inline double path_bandwidth(const Path &p) {
@@ -421,7 +399,6 @@ inline double path_bandwidth(const Path &p) {
 class Graph {
 
 public:
-
   /*! Build a new graph
    */
   Graph() {}
@@ -434,7 +411,7 @@ public:
   template <Vertex::Type T> std::set<Vertex_t> vertices() {
     std::set<Vertex_t> ret;
     for (auto &v : vertices_) {
-      if (v->type_ == T) {
+      if (v->data.index() == T) {
         ret.insert(v);
       }
     }
@@ -579,12 +556,12 @@ public:
 
   Vertex_t get_package(unsigned idx) {
     for (auto v : vertices<Vertex::Type::Intel>()) {
-      if (v->data_.intel.idx == idx) {
+      if (std::get<IntelData>(v->data).idx == idx) {
         return v;
       }
     }
     for (auto v : vertices<Vertex::Type::Ppc>()) {
-      if (v->data_.ppc_.idx == idx) {
+      if (std::get<PpcData>(v->data).idx == idx) {
         return v;
       }
     }
@@ -592,35 +569,39 @@ public:
     return nullptr;
   }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnoshadow"
   Vertex_t get_pci(const PciAddress &address) {
     for (const auto &v : vertices_) {
-      if (v->type_ == Vertex::Type::Bridge) {
-        PciAddress br = v->data_.bridge_.addr;
+      if (auto p = std::get_if<BridgeData>(&v->data)) {
+        PciAddress br = p->addr;
         if (br.domain_ == address.domain_ && br.bus_ == address.bus_) {
           return v;
         }
-
-      } else if (v->type_ == Vertex::Type::PciDev) {
-        if (v->data_.pciDev.addr == address) {
+      } else if (auto p = std::get_if<PciDeviceData>(&v->data)) {
+        if (p->addr == address) {
           return v;
         }
-      } else if (v->type_ == Vertex::Type::Gpu) {
-        if (v->data_.gpu.pciDev.addr == address) {
+      } else if (auto p = std::get_if<GpuData>(&v->data)) {
+        if (p->pciDev.addr == address) {
           return v;
         }
-      } else if (v->type_ == Vertex::Type::NvLinkBridge) {
-        if (v->data_.nvLinkBridge.pciDev.addr == address) {
+      } else if (auto p = std::get_if<NvLinkBridgeData>(&v->data)) {
+        if (p->pciDev.addr == address) {
           return v;
         }
       }
     }
     return nullptr;
   }
+  #pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnoexcept-type"
 
   Vertex_t get_bridge_for_address(const PciAddress &address) {
     for (const auto &br : vertices<Vertex::Type::Bridge>()) {
-      if (br->data_.bridge_.domain.domain_ == address.domain_ &&
-          br->data_.bridge_.secondaryBus.bus_ == address.bus_) {
+      BridgeData &data = std::get<BridgeData>(br->data);
+      if (data.domain.domain_ == address.domain_ &&
+          data.secondaryBus.bus_ == address.bus_) {
         return br;
       }
     }
@@ -754,7 +735,8 @@ public:
 
   // return the path from src to dst that has the minimum cost.
   // if no path is found, return an empty path
-  Path min_path(const Vertex_t src, const Vertex_t dst, std::function<float(const Path &)> cost) {
+  Path min_path(const Vertex_t src, const Vertex_t dst,
+                std::function<float(const Path &)> cost) {
     std::vector<Path> allPaths = paths(src, dst);
     if (allPaths.empty()) {
       return Path();
@@ -769,7 +751,8 @@ public:
 
   // return the path from src to dst that has the max cost.
   // if no path is found, return an empty path
-  Path max_path(const Vertex_t src, const Vertex_t dst, std::function<float(const Path &)> cost) {
+  Path max_path(const Vertex_t src, const Vertex_t dst,
+                std::function<float(const Path &)> cost) {
     std::vector<Path> allPaths = paths(src, dst);
     if (allPaths.empty()) {
       return Path();

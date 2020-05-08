@@ -30,13 +30,13 @@ inline void add_packages(hwgraph::Graph &graph) {
       Vertex *v = new Vertex();
 
 #ifdef __x86_64__
-      v->type_ = Vertex::Type::Intel;
-      v->data_.intel.idx = i;
       v->name_ = obj->name ? obj->name : "anonymous intel";
+      IntelData data;
+      data.idx = i;
 #elif __PPC__
-      v->type_ = Vertex::Type::Ppc;
-      v->data_.ppc_.idx = i;
       v->name_ = obj->name ? obj->name : "anonymous PPC";
+      PpcData data;
+      data.idx = i;
 #endif
 
       // section 23.13 p. 266
@@ -48,32 +48,30 @@ inline void add_packages(hwgraph::Graph &graph) {
 
 // Section 9.2 (p.37)
 #ifdef __x86_64__
-
         if (std::string("CPUModel") == obj->infos[j].name) {
           v->name_ = obj->infos[j].value;
-          std::strncpy(v->data_.intel.model, obj->infos[j].value,
-                       hwgraph::MAX_STR);
+          data.model = obj->infos[j].value;
         } else if (std::string("CPUVendor") == obj->infos[j].name) {
-          std::strncpy(v->data_.intel.vendor, obj->infos[j].value,
-                       hwgraph::MAX_STR);
+          data.vendor = obj->infos[j].value;
         } else if (std::string("CPUModelNumber") == obj->infos[j].name) {
-          v->data_.intel.modelNumber = std::atoi(obj->infos[j].value);
+          data.modelNumber = std::atoi(obj->infos[j].value);
         } else if (std::string("CPUFamilyNumber") == obj->infos[j].name) {
-          v->data_.intel.familyNumber = std::atoi(obj->infos[j].value);
+          data.familyNumber = std::atoi(obj->infos[j].value);
         } else if (std::string("CPUStepping") == obj->infos[j].name) {
-          v->data_.intel.stepping = std::atoi(obj->infos[j].value);
+          data.stepping = std::atoi(obj->infos[j].value);
         }
 #endif
 
 #ifdef __PPC__
         if (std::string("CPUModel") == obj->infos[j].name) {
           v->name_ = obj->infos[j].value;
-          std::strncpy(v->data_.ppc_.model, obj->infos[j].value, MAX_STR);
+          data.model = obj->infos[j].value;
         } else if (std::string("CPURevision") == obj->infos[j].name) {
-          v->data_.ppc_.revision = std::atoi(obj->infos[j].value);
+          data.revision = std::atoi(obj->infos[j].value);
         }
 #endif
       }
+      v->data = data;
       graph.take_vertex(v);
     }
 
@@ -96,14 +94,15 @@ inline void add_packages(hwgraph::Graph &graph) {
     for (auto i : graph.vertices<Vertex::Type::Intel>()) {
       for (auto j : graph.vertices<Vertex::Type::Intel>()) {
         if (i != j) {
-          if (i->data_.intel.familyNumber == 6 &&
-              i->data_.intel.modelNumber == 0x4f) {
-            Edge *edge = new Edge(Edge::Type::Qpi);
-            edge->data_.qpi_.links_ = 2;
-            edge->data_.qpi_.speed_ = 8 * Edge::QPI_GT;
+          IntelData &data = std::get<IntelData>(i->data);
+          if (data.familyNumber == 6 && data.modelNumber == 0x4f) {
+            QpiData qd;
+            qd.links_ = 2;
+            qd.speed_ = 8 * Edge::QPI_GT;
+            Edge_t edge = Edge::make_qpi(qd);
             graph.join(i, j, edge);
           } else {
-            Edge *edge = new Edge(Edge::Type::Unknown);
+            Edge *edge = new Edge();
             graph.join(i, j, edge);
           }
         }
@@ -174,20 +173,21 @@ inline void visit_pci_device(hwgraph::Graph &graph, const hwloc_obj_t obj) {
   // get address
   const auto pci = obj->attr->pcidev;
   PciAddress objAddress = {pci.domain, pci.bus, pci.dev, pci.func};
-
   Vertex_t newDevice = Vertex::new_pci_device(name, objAddress, pci.linkspeed);
-  newDevice->data_.pciDev.classId = obj->attr->pcidev.class_id;
-  newDevice->data_.pciDev.vendorId = obj->attr->pcidev.vendor_id;
-  newDevice->data_.pciDev.deviceId = obj->attr->pcidev.device_id;
-  newDevice->data_.pciDev.subvendorId = obj->attr->pcidev.subvendor_id;
-  newDevice->data_.pciDev.subdeviceId = obj->attr->pcidev.subdevice_id;
-  newDevice->data_.pciDev.revision = obj->attr->pcidev.revision;
+
+  PciDeviceData data;
+  data.classId = obj->attr->pcidev.class_id;
+  data.vendorId = obj->attr->pcidev.vendor_id;
+  data.deviceId = obj->attr->pcidev.device_id;
+  data.subvendorId = obj->attr->pcidev.subvendor_id;
+  data.subdeviceId = obj->attr->pcidev.subdevice_id;
+  data.revision = obj->attr->pcidev.revision;
+  newDevice->data = data;
 
   /*  IBM device 04ea is an emulated NvLink Bridge, not a real device
       we will handle this case in the nvml code
   */
-  if (newDevice->data_.pciDev.vendorId == 0x1014 &&
-      newDevice->data_.pciDev.deviceId == 0x4ea) {
+  if (data.vendorId == 0x1014 && data.deviceId == 0x4ea) {
     newDevice = nullptr;
   }
 
@@ -266,13 +266,13 @@ inline void descend_pci_tree(hwloc_topology_t topology, hwgraph::Graph &graph,
 
         auto link = Edge::new_pci(up_pci.linkspeed);
 
-        if (upstreamCompute->type_ == Vertex::Type::Intel) {
+        if (auto p = std::get_if<IntelData>(&upstreamCompute->data)) {
           // i7-5820k
-          if (upstreamCompute->data_.intel.familyNumber == 6 &&
-              upstreamCompute->data_.intel.modelNumber == 63) {
-            link->data_.pci.lanes = 28;
-            if (link->data_.pci.linkSpeed == 0) {
-              link->data_.pci.linkSpeed = 16;
+          if (p->familyNumber == 6 && p->modelNumber == 63) {
+            PciData &data = std::get<PciData>(link->data);
+            data.lanes = 28;
+            if (data.linkSpeed == 0) {
+              data.linkSpeed = 16;
             }
           }
         }

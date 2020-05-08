@@ -12,6 +12,17 @@ inline std::string hex_str(unsigned short u) {
   return ss.str();
 }
 
+struct UnknownData {
+
+};
+
+struct BridgeData {
+  PciAddress addr;
+  PciAddress domain;
+  PciAddress secondaryBus;
+  PciAddress subordinateBus;
+};
+
 struct PciDeviceData {
   PciAddress addr;
   unsigned short classId;
@@ -61,8 +72,8 @@ struct NvSwitchData {
 
 struct IntelData {
   unsigned idx; // hwloc index
-  char model[hwgraph::MAX_STR];
-  char vendor[hwgraph::MAX_STR];
+  std::string model;
+  std::string vendor;
   int modelNumber;
   int familyNumber;
   int stepping;
@@ -82,7 +93,7 @@ struct IntelData {
 
 struct PpcData {
   unsigned idx; // hwloc index
-  char model[hwgraph::MAX_STR];
+  std::string model;
   int revision;
 
   std::string str() const {

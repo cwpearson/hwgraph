@@ -70,8 +70,8 @@ inline void add_gpus(hwgraph::Graph &graph) {
     std::cerr << "take pci info\n";
     // update it with existing PCI info, if found
     if (local) {
-      if (local->type_ == Vertex::Type::PciDev) {
-        gpu->data_.gpu.pciDev = local->data_.pciDev;
+      if (local->data.index() == Vertex::Type::PciDev) {
+        std::get<GpuData>(gpu->data).pciDev = std::get<PciDeviceData>(local->data);
       } else {
         assert(0);
       }
@@ -80,8 +80,8 @@ inline void add_gpus(hwgraph::Graph &graph) {
     std::cerr << "get CUDA CC\n";
     int cudaMajor, cudaMinor;
     NVML(nvmlDeviceGetCudaComputeCapability(dev, &cudaMajor, &cudaMinor));
-    gpu->data_.gpu.ccMajor = cudaMajor;
-    gpu->data_.gpu.ccMinor = cudaMinor;
+    std::get<GpuData>(gpu->data).ccMajor = cudaMajor;
+    std::get<GpuData>(gpu->data).ccMinor = cudaMinor;
 
     if (local) {
       std::cerr << "add_gpus(): replace\n";
@@ -136,7 +136,7 @@ inline void add_nvlinks(hwgraph::Graph &graph) {
                          safe_narrow<unsigned char>(pciInfo.device), 0};
       std::cerr << "add_nvlinks(): local " << addr.str() << "\n";
       auto local = graph.get_pci(addr);
-      assert(local->type_ == Vertex::Type::Gpu);
+      assert(local->data.index() == Vertex::Type::Gpu);
 
       // figure out what's on the other side
       NVML(nvmlDeviceGetNvLinkRemotePciInfo(dev, l, &pciInfo));
@@ -160,20 +160,20 @@ inline void add_nvlinks(hwgraph::Graph &graph) {
       unsigned int version;
       NVML(nvmlDeviceGetNvLinkVersion(dev, l, &version));
 
-      if (remote->type_ == Vertex::Type::Gpu) {
+      if (remote->data.index() == Vertex::Type::Gpu) {
         std::cerr << "remote is " << remote->str() << "\n";
 
         // nvlink will be visible from both sides, so only connect one way
-        if (local->data_.gpu.pciDev.addr < remote->data_.gpu.pciDev.addr) {
+        if (std::get<GpuData>(local->data).pciDev.addr < std::get<GpuData>(remote->data).pciDev.addr) {
           auto link = Edge::new_nvlink(version, 1);
           graph.join(local, remote, link);
         }
 
-      } else if (remote->type_ == Vertex::Type::Ppc) {
+      } else if (remote->data.index() == Vertex::Type::Ppc) {
         std::cerr << "remote is " << remote->str() << "\n";
         auto link = Edge::new_nvlink(version, 1);
         graph.join(local, remote, link);
-      } else if (remote->type_ == Vertex::Type::NvSwitch) {
+      } else if (remote->data.index() == Vertex::Type::NvSwitch) {
         std::cerr << "nvswitch?\n";
         std::cerr << "remote is " << remote->str() << "\n";
         assert(0);

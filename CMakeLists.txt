@@ -17,6 +17,8 @@ option(USE_HWLOC "compile with hwloc support" ON)
 set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake ${CMAKE_MODULE_PATH})
 include("${CMAKE_CURRENT_LIST_DIR}/cmake/GetGitRevisionDescription.cmake")
 
+set(CMAKE_CXX_EXTENSIONS OFF)
+
 get_git_head_revision(GIT_REFSPEC GIT_HASH)
 git_local_changes(GIT_LOCAL_CHANGES)
 message(STATUS GIT_REFSPEC=${GIT_REFSPEC})
@@ -26,7 +28,8 @@ message(STATUS GIT_LOCAL_CHANGES=${GIT_LOCAL_CHANGES})
 add_library(hwgraph INTERFACE)
 add_library(hwgraph::hwgraph ALIAS hwgraph)
 
-target_compile_features(hwgraph INTERFACE cxx_std_11)
+target_compile_features(hwgraph INTERFACE cxx_std_17)
+
 
 if (USE_NVML)
   find_package(CUDAToolkit REQUIRED)
